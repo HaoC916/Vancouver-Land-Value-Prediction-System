@@ -40,6 +40,13 @@ Placeholder: One or two sentences describing the problem, objective, and expecte
   - `src/eval/` — Metrics, error analysis (e.g., subgroup/neighborhood breakdown), and comparison utilities.
   - `src/viz/` — Plotting functions used by notebooks/reports to keep visuals consistent.
 
+### Key scripts
+- `src/data/clean_property_tax.py` — Cleans the raw CSV into a modeling-ready parquet and writes a small summary CSV.
+- `src/models/baseline.py` — Ridge baseline on the cleaned parquet; prints metrics and writes plots + neighborhood error CSV.
+- `src/models/human_suite.py` — Runs the human-track suite (Ridge + optional XGBoost/LightGBM if installed) and writes a comparison table.
+- `src/eval/baseline_reports.py` — Shared evaluation helpers to write neighborhood error summaries.
+- `src/viz/baseline_plots.py` — Shared plotting helpers (scatter, log-scatter, residuals, top-20 MAE).
+
 ### Outputs & writing assets
 - `reports/` — Report-related materials.
   - `reports/figures/` — Exported plots/images used in the report/slides (so outputs are centralized).
@@ -58,7 +65,21 @@ pip install -r requirements.txt
 ```
 
 ## How to Run
-Placeholder: Add minimal steps for preprocessing, training, and evaluation once defined.
+1. Place the raw CSV at `data/raw/property-tax-report.csv` (semicolon-separated).
+2. Clean and produce the parquet:
+```bash
+python -m src.data.clean_property_tax --in_path data/raw/property-tax-report.csv --out_path data/interim/property_tax_clean.parquet
+```
+3. Run the baseline model:
+```bash
+python -m src.models.baseline
+python -m src.models.baseline --sample_frac 0.1
+```
+4. Run the human-track model suite:
+```bash
+python -m src.models.human_suite
+```
+Outputs (plots + tables) are written to `reports/figures/`.
 
 ## Milestones & Deliverables
 - Milestone slides
