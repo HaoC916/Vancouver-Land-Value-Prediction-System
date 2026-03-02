@@ -13,7 +13,6 @@ The project also includes a parallel track comparing a **Human Analyst** workflo
 ---
 
 ## Dataset Sources (Raw Inputs)
-
 > **Raw datasets are NOT committed to git.**  
 > Team members should download the shared raw archive from Google Drive and place the extracted files under `data/raw/`.
 >
@@ -21,7 +20,6 @@ The project also includes a parallel track comparing a **Human Analyst** workflo
 > https://drive.google.com/file/d/1E_TRIkR4O6fVaFZgEzJWl4mH9dc7Auo2/view?usp=sharing
 >
 > **Current status:** the project currently **trains only on the Property Tax dataset**. Other sources (Census/IRCC/CMHC/Mortgage rate) are downloaded and ready for later integration.
-
 ### 1) City of Vancouver — Property Tax Report (main training data)
 - **File (raw):** `data/raw/property-tax-report.csv`
 - **Source:** City of Vancouver Open Data Portal (Property Tax Report)
