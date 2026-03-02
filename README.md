@@ -1,92 +1,167 @@
-﻿# CMPT 733 Final Project
+﻿# CMPT 733 Final Project — WEB CRaWLer
 
 ## Project Overview
-Placeholder: One or two sentences describing the problem, objective, and expected impact.
+We predict **Vancouver property land assessment values** and study **model reliability across neighbourhoods** using multi-source public data.  
+The project also includes a parallel track comparing a **Human Analyst** workflow vs. an **AI Agent** workflow under the same evaluation protocol.
 
 ## Team & Roles
-- Chenzheng Li
-- Luna Sang
-- Ryan Chen
-- Wenxiang He
+- Chenzheng Li — data cleaning/integration + human-track modeling & evaluation
+- Luna Sang — AI-agent track (design + implementation + demo)
+- Ryan Chen — comparison analysis + presentation/report integration
+- Wenxiang He — feature/analysis support + visualization & interpretation
 
-## Dataset Sources
-- Placeholder: dataset name + link
-- Placeholder: dataset name + link
+---
 
-## Repo Structure
+## Dataset Sources (Raw Inputs)
+> Raw files are stored under `data/raw/` (not committed to git). The project currently **trains only on the property tax dataset**; other sources are downloaded and ready for later integration.
 
-### Top-level files
-- `README.md` — Project landing page: what we do, datasets, how to set up, and where things live.
-- `requirements.txt` — Python dependencies for `pip install -r requirements.txt` (keep minimal; add only when needed).
-- `.gitignore` — Prevents committing large data files, caches, secrets, and notebook checkpoints.
-- `LICENSE` — Usage/license terms for the repository (e.g., MIT).
-- `CONTRIBUTING.md` — Team workflow rules (branching, PR checklist, commit message conventions).
+### 1) City of Vancouver — Property Tax Report (main training data)
+- **File (raw):** `data/raw/property-tax-report.csv`
+- **Source:** City of Vancouver Open Data Portal (Property Tax Report)
+- **Format:** CSV, **semicolon-separated (`;`)**
+- **Key columns used:**
+  - `CURRENT_LAND_VALUE` (target)
+  - `REPORT_YEAR` (time split)
+  - `NEIGHBOURHOOD_CODE` (group-level reliability analysis)
+  - plus zoning/ownership/age/location proxies (see Feature List below)
 
-### GitHub automation
-- `.github/workflows/ci.yml` — Minimal CI checks on push/PR (e.g., install deps / basic Python sanity checks). Helps catch “works on my machine” issues early.
+### 2) Statistics Canada — Census Profile 2021 (downloaded, not yet merged)
+- Files (raw):
+  - `data/raw/statcan_censusprofile2021_data_20260228.csv`
+  - `data/raw/statcan_censusprofile2021_geoindex_20260228.csv`
+  - `data/raw/statcan_censusprofile2021_meta_20260228.txt`
+  - optional: `data/raw/optional/statcan_censusprofile2021_single_geo_20260228.csv`
 
-### Data
-- `data/raw/` — Original datasets as downloaded. **Not tracked in git** (store download links/scripts instead).
-- `data/interim/` — Intermediate outputs during cleaning/integration (temporary artifacts).
-- `data/processed/` — Final modeling-ready datasets. Typically **not tracked in git** unless very small samples.
+### 3) IRCC — Permanent Residents / Study Permit Holders (downloaded, not yet merged)
+- Files (raw):
+  - `data/raw/ircc_pr_cma_20260228.xlsx`
+  - `data/raw/ircc_studypermits_pt_studylevel_20260228.xlsx`
 
-### Analysis & experiments
-- `notebooks/` — Jupyter notebooks for EDA, quick experiments, and visual exploration. (Notebooks can be messy; final reproducible steps should eventually live in `src/`.)
+### 4) StatCan — Mortgage Rate (downloaded, not yet merged)
+- File (raw): `data/raw/statcan_mortgage_rate_5yr_20260228.csv`
 
-### Source code (reproducible pipeline lives here)
-- `src/` — Main Python package for reusable code.
-  - `src/data/` — Data loading, cleaning, joining/integration, and feature construction helpers.
-  - `src/models/` — Model training, prediction, and serialization utilities.
-  - `src/eval/` — Metrics, error analysis (e.g., subgroup/neighborhood breakdown), and comparison utilities.
-  - `src/viz/` — Plotting functions used by notebooks/reports to keep visuals consistent.
+### 5) CMHC — Vancouver Rental Indicators (downloaded, not yet merged)
+- File (raw): `data/raw/cmhc_vancouver_rental_supply_change_20260228.csv`
 
-### Key scripts
-- `src/data/clean_property_tax.py` — Cleans the raw CSV into a modeling-ready parquet and writes a small summary CSV.
-- `src/models/baseline.py` — Ridge baseline on the cleaned parquet; prints metrics and writes plots + neighborhood error CSV.
-- `src/models/human_suite.py` — Runs the human-track suite (Ridge + optional XGBoost/LightGBM if installed) and writes a comparison table.
-- `src/eval/baseline_reports.py` — Shared evaluation helpers to write neighborhood error summaries.
-- `src/viz/baseline_plots.py` — Shared plotting helpers (scatter, log-scatter, residuals, top-20 MAE).
+---
 
-### Outputs & writing assets
-- `reports/` — Report-related materials.
-  - `reports/figures/` — Exported plots/images used in the report/slides (so outputs are centralized).
-- `slides/` — Presentation materials.
-  - `slides/milestone/` — Milestone presentation (5 min) assets.
-  - `slides/final/` — Final presentation assets.
-- `docs/` — Extra documentation: data dictionary, decisions/assumptions, meeting notes, references, etc.
+## Current Data Pipeline (What is used now)
+
+### (1) What raw data is used before cleaning?
+- **Raw training source:** `data/raw/property-tax-report.csv`
+- **Used by cleaning script:** `src/data/clean_property_tax.py`
+
+### (2) What cleaned data is used for modeling?
+- **Cleaned dataset (parquet):** `data/interim/property_tax_clean.parquet`
+- **Produced by:** `src/data/clean_property_tax.py`
+- **Used by models:** `src/models/baseline.py`, `src/models/human_suite.py`
+
+---
+
+## Modeling Protocol
+
+### (3) Train/Test split
+We use a **time-aware split** based on `REPORT_YEAR`:
+- **Train:** `REPORT_YEAR < 2024`
+- **Test:** `REPORT_YEAR >= 2024`
+
+This avoids temporal leakage and matches the course feedback requirement for an explicit training/testing split.
+
+### (4) Features used for training (column name + meaning + type)
+The current baseline model trains on the cleaned parquet using the following input features:
+
+**Categorical (one-hot encoded)**
+- `LEGAL_TYPE` — ownership/legal structure *(categorical)*
+- `ZONING_DISTRICT` — zoning district code *(categorical)*
+- `ZONING_CLASSIFICATION` — zoning/land-use category *(categorical)*
+- `NEIGHBOURHOOD_CODE` — neighbourhood identifier *(categorical)*
+- `PROPERTY_POSTAL_CODE` — location proxy *(categorical)*
+
+**Numeric (median imputed + scaled)**
+- `LAND_COORDINATE` — location proxy coordinate *(numeric; coerced to numeric in cleaning)*
+- `YEAR_BUILT` — building year *(numeric)*
+- `BIG_IMPROVEMENT_YEAR` — major improvement year *(numeric)*
+
+> Notes:
+> - Missing values are handled by `SimpleImputer` (most frequent for categorical, median for numeric).
+> - Numeric features are scaled using `MaxAbsScaler` to stabilize Ridge regression.
+
+### (5) Prediction target (column name + meaning + type)
+- `CURRENT_LAND_VALUE` — assessed **land value** in CAD *(numeric)*
+
+This is the variable the model predicts.
+
+---
+
+## Results / Outputs
+
+Baseline outputs are written to `reports/figures/`:
+
+- `reports/figures/baseline_scatter_log.png` — predicted vs actual (log1p) with y=x reference line  
+- `reports/figures/baseline_residuals_clip.png` — residual histogram (clipped for readability)  
+- `reports/figures/baseline_neighbourhood_mae_top20.png` — top-20 neighbourhoods by MAE  
+- `reports/figures/baseline_neighbourhood_error.csv` — neighbourhood-level error summary table  
+
+### Baseline: Actual vs Predicted (log1p)
+![Baseline scatter log](reports/figures/baseline_scatter_log.png)
+
+### Baseline: Residuals (clipped)
+![Baseline residuals clip](reports/figures/baseline_residuals_clip.png)
+
+### Baseline: Top 20 Neighbourhoods by MAE
+![Baseline neighbourhood MAE top20](reports/figures/baseline_neighbourhood_mae_top20.png)
+
+## Repo Structure (High-level)
+- `data/raw/` — raw downloaded datasets (ignored by git)
+- `data/interim/` — intermediate outputs (e.g., cleaned parquet; ignored by git)
+- `reports/figures/` — generated plots/tables used for slides/report
+- `src/` — project code
+  - `src/data/` — data cleaning scripts
+  - `src/models/` — baseline + suite runners
+  - `src/eval/` — metrics + neighbourhood reports
+  - `src/viz/` — plotting
+
+---
 
 ## Setup
-Using `pip` (placeholder commands):
+Using `pip`:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
-
-## How to Run
-1. Place the raw CSV at `data/raw/property-tax-report.csv` (semicolon-separated).
-2. Clean and produce the parquet:
+---
+## How to Run (Current Human Track)
+### 1) Clean raw CSV → parquet
+input:
+- `data/raw/property-tax-report.csv` (semicolon-separated)
+run:
 ```bash
-python -m src.data.clean_property_tax --in_path data/raw/property-tax-report.csv --out_path data/interim/property_tax_clean.parquet
+python -m src.data.clean_property_tax \
+  --in_path data/raw/property-tax-report.csv \
+  --out_path data/interim/property_tax_clean.parquet
+
 ```
-3. Run the baseline model:
+output:
+- `data/interim/property_tax_clean.parquet`
+- `data/interim/property_tax_clean.parquet`
+
+### 2) Run baseline model
 ```bash
 python -m src.models.baseline
+# optional sampling:
 python -m src.models.baseline --sample_frac 0.1
 ```
-4. Run the human-track model suite:
-```bash
+output(example):
+- `reports/figures/baseline_scatter_log.png`
+- `reports/figures/baseline_neighbourhood_error.csv`
+- `reports/figures/baseline_neighbourhood_mae_top20.png`
+
+### Run human-track suite (optional)
+```bahs
 python -m src.models.human_suite
 ```
-Outputs (plots + tables) are written to `reports/figures/`.
-
-## Milestones & Deliverables
-- Milestone slides
-- Final presentation
-- Final report
-- Poster
-- Code
-
+---
 ## License
-Placeholder: MIT (see `LICENSE`).
+MIT(see `LICENSE`)
