@@ -5,10 +5,10 @@ We predict **Vancouver property land assessment values** and study **model relia
 The project also includes a parallel track comparing a **Human Analyst** workflow vs. an **AI Agent** workflow under the same evaluation protocol.
 
 ## Team & Roles
-- Chenzheng Li — data cleaning/integration + human-track modeling & evaluation
-- Luna Sang — AI-agent track (design + implementation + demo)
-- Ryan Chen — comparison analysis + presentation/report integration
-- Wenxiang He — feature/analysis support + visualization & interpretation
+- Chenzheng Li — []
+- Luna Sang — []
+- Ryan Chen — []
+- Wenxiang He — []
 
 ---
 
