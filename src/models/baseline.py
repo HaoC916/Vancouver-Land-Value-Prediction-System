@@ -7,7 +7,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, MaxAbsScaler
 
 from src.eval.baseline_reports import write_baseline_reports
 from src.eval.metrics import compute_metrics, prediction_sanity_stats, scale_warning
@@ -36,7 +36,19 @@ FEATURE_COLS = CAT_COLS + NUM_COLS
 def load_data(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path)
     needed = FEATURE_COLS + [TARGET_COL, REPORT_YEAR_COL]
-    return df[needed].copy()
+    df = df[needed].copy()
+
+    # Safety: ensure numeric columns are numeric (in case parquet came from mixed types)
+    for c in NUM_COLS + [TARGET_COL, REPORT_YEAR_COL]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # Basic safety (should already be cleaned, but keep it cheap)
+    df = df.dropna(subset=[TARGET_COL, REPORT_YEAR_COL])
+    df = df[df[TARGET_COL] > 0]
+
+    # Make year an int for clean split
+    df[REPORT_YEAR_COL] = df[REPORT_YEAR_COL].astype(int)
+    return df
 
 
 def build_pipeline() -> Pipeline:
@@ -49,6 +61,8 @@ def build_pipeline() -> Pipeline:
     num_pipe = Pipeline(
         steps=[
             ("imputer", SimpleImputer(strategy="median")),
+            # Ridge is very sensitive to scale; MaxAbsScaler is safe with sparse stacking
+            ("scale", MaxAbsScaler()),
         ]
     )
 
@@ -99,11 +113,16 @@ def main() -> None:
     X_test = test_df[FEATURE_COLS]
     y_test = test_df[TARGET_COL]
 
+    # ===== Train on log target to handle heavy tail =====
+    y_train_log = np.log1p(y_train)
+
     pipeline = build_pipeline()
-    pipeline.fit(X_train, y_train)
+    pipeline.fit(X_train, y_train_log)
 
-    y_pred = pipeline.predict(X_test)
+    y_pred_log = pipeline.predict(X_test)
+    y_pred = np.expm1(y_pred_log)  # back to original dollar scale
 
+    # Sanity stats
     y_true_stats, y_pred_stats = prediction_sanity_stats(y_test, y_pred)
     print(
         "Test y_true stats (p50/p90/p99/max): "
