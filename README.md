@@ -13,7 +13,14 @@ The project also includes a parallel track comparing a **Human Analyst** workflo
 ---
 
 ## Dataset Sources (Raw Inputs)
-> Raw files are stored under `data/raw/` (not committed to git). The project currently **trains only on the property tax dataset**; other sources are downloaded and ready for later integration.
+
+> **Raw datasets are NOT committed to git.**  
+> Team members should download the shared raw archive from Google Drive and place the extracted files under `data/raw/`.
+>
+> **Shared raw archive (Google Drive):**  
+> https://drive.google.com/file/d/1E_TRIkR4O6fVaFZgEzJWl4mH9dc7Auo2/view?usp=sharing
+>
+> **Current status:** the project currently **trains only on the Property Tax dataset**. Other sources (Census/IRCC/CMHC/Mortgage rate) are downloaded and ready for later integration.
 
 ### 1) City of Vancouver — Property Tax Report (main training data)
 - **File (raw):** `data/raw/property-tax-report.csv`
@@ -95,31 +102,32 @@ This is the variable the model predicts.
 
 ## Results / Outputs
 
-Baseline outputs are written to `reports/figures/`:
+All outputs are written to `reports/figures/`.
 
+### Public-friendly figures (recommended for slides)
+These figures are designed for non-technical audiences (e.g., policy stakeholders).
+
+- `reports/figures/baseline_scatter_public.png` — model estimate vs official land value (CAD, log scale) with “perfect match” line  
+- `reports/figures/baseline_error_distribution_public.png` — distribution of estimation errors (CAD; extreme cases clipped)  
+- `reports/figures/baseline_neighbourhood_difficulty_public.png` — top-20 neighbourhoods by typical error (CAD)
+
+#### How close are our predictions?
+![Baseline scatter public](reports/figures/baseline_scatter_public.png)
+
+#### How big are the errors?
+![Baseline error distribution public](reports/figures/baseline_error_distribution_public.png)
+
+#### Which neighbourhoods are harder to estimate?
+![Baseline neighbourhood difficulty public](reports/figures/baseline_neighbourhood_difficulty_public.png)
+
+---
+
+### Technical figures (for modeling/debugging)
 - `reports/figures/baseline_scatter_log.png` — predicted vs actual (log1p) with y=x reference line  
 - `reports/figures/baseline_residuals_clip.png` — residual histogram (clipped for readability)  
 - `reports/figures/baseline_neighbourhood_mae_top20.png` — top-20 neighbourhoods by MAE  
 - `reports/figures/baseline_neighbourhood_error.csv` — neighbourhood-level error summary table  
 
-### Baseline: Actual vs Predicted (log1p)
-![Baseline scatter log](reports/figures/baseline_scatter_log.png)
-
-### Baseline: Residuals (clipped)
-![Baseline residuals clip](reports/figures/baseline_residuals_clip.png)
-
-### Baseline: Top 20 Neighbourhoods by MAE
-![Baseline neighbourhood MAE top20](reports/figures/baseline_neighbourhood_mae_top20.png)
-
-## Repo Structure (High-level)
-- `data/raw/` — raw downloaded datasets (ignored by git)
-- `data/interim/` — intermediate outputs (e.g., cleaned parquet; ignored by git)
-- `reports/figures/` — generated plots/tables used for slides/report
-- `src/` — project code
-  - `src/data/` — data cleaning scripts
-  - `src/models/` — baseline + suite runners
-  - `src/eval/` — metrics + neighbourhood reports
-  - `src/viz/` — plotting
 
 ---
 
