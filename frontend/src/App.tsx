@@ -10,6 +10,8 @@ export default function App() {
   const [messages, setMessages] = useState<{ role: "user" | "agent"; text: string }[]>([]);
   // debug switch: show/hide raw JSON and steps list
   const [showDebug, setShowDebug] = useState<boolean>(false);
+  // which page is active: "agent" | "human" | "analysis"
+  const [page, setPage] = useState<"agent" | "human" | "analysis">("agent");
 
   useEffect(() => {
     // fetch data from the data agent folder
@@ -79,9 +81,15 @@ export default function App() {
     typeReply(reply);
     setInput("");
   }
-
+  
   return (
-    <div style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>
+    <div style={{ 
+      padding: 24, 
+      fontFamily: "system-ui, sans-serif",
+      maxWidth: 1100,
+      margin: "0 auto", // center the page
+      boxSizing: "border-box",
+    }}>
       <h1>CMPT733 Final Project — UI</h1>
       <p>If you can see this, React is working.</p>
       {/* Debug toggle button */}
@@ -107,21 +115,57 @@ export default function App() {
         </>
       )}
 
+      {/*Simulated Chat UI*/}
       <h2 style={{ marginTop: 30 }}>Simulated Chat</h2>
-      <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12, background: "white" }}>
+      <div style={{ 
+        border: "1px solid #eee", 
+        borderRadius: 12, 
+        padding: 12, 
+        background: "white",
+        width: "100%",
+        maxWidth: "100%",
+        overflow: "hidden",
+        boxSizing: "border-box",
+      }}>
+
         {/* Chat history */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
+        <div 
+          style={{ 
+            display: "flex", 
+            flexDirection: "column", 
+            gap: 10, 
+            marginBottom: 12,
+            // -- fixed height + scroll --
+            height: 360,
+            overflowY: "auto",
+            padding: 8,
+            borderRadius: 12,
+            background: "#fafafa",
+            border: "1px solid #eee",
+            width: "100%",
+            maxWidth: "100%",
+            minWidth: 0,
+            overflowX: "hidden",   // hide horizontal overflow
+            boxSizing: "border-box",    
+          }}
+        > 
+          {/* Chat bubbles */}
           {messages.map((m, idx) => (
             <div 
               key={idx}
               style={{
                 alignSelf: m.role === "user" ? "flex-end" : "flex-start",
-                background: m.role === "user" ? "#dbeafe" : "#f3f4f6",
-                padding: 10,
-                borderRadius: 12,
-                maxWidth: "80%",
+                background: m.role === "user" ? "#dbeafe" : "white",
+                padding: "10px 12px",
+                borderRadius: 14,
+                maxWidth: "78%",
                 whiteSpace: "pre-wrap",
-                lineHeight: 1.5
+                lineHeight: 1.55,
+                border: "1px solid #eee",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                wordBreak: "break-word",   // FORCE WORD BREAK
+                overflowWrap: "anywhere",  // HANDLE LONG TEXT
+                minWidth: 0,
               }}
             >
               {m.text}
