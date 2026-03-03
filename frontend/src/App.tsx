@@ -3,40 +3,56 @@ import AgentPage from "./pages/AgentPage";
 import HumanPage from "./pages/HumanPage";
 import AnalysisPage from "./pages/AnalysisPage";
 
+type Page = "agent" | "human" | "analysis";
+
 export default function App() {
-  const [page, setPage] = useState<"agent" | "human" | "analysis">("agent");
+  const [page, setPage] = useState<Page>("agent");
+
+  const tabClass = (active: boolean) =>
+    [
+      "rounded-full px-4 py-2 text-sm font-medium transition",
+      active
+        ? "bg-slate-900 text-white shadow-sm"
+        : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+    ].join(" ");
 
   return (
-    <div style={{ minHeight: "100vh", fontFamily: "system-ui, sans-serif", background: "#fff" }}>
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       {/* Top Nav */}
-      <div style={{ position: "sticky", top: 0, zIndex: 10, background: "white", borderBottom: "1px solid #eee" }}>
-        <div
-          style={{
-            maxWidth: 1100,
-            margin: "0 auto",
-            padding: "16px 24px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            boxSizing: "border-box",
-          }}
-        >
-          <div style={{ fontWeight: 800 }}>CMPT733 Final Project</div>
-
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => setPage("agent")}>Agent</button>
-            <button onClick={() => setPage("human")}>Human</button>
-            <button onClick={() => setPage("analysis")}>Analysis</button>
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-xl bg-slate-900" />
+            <div>
+              <div className="text-sm font-semibold tracking-tight">
+                CMPT733 Final Project
+              </div>
+              <div className="text-xs text-slate-500">
+                Housing Price Demo
+              </div>
+            </div>
           </div>
+
+          <nav className="flex items-center gap-2">
+            <button className={tabClass(page === "agent")} onClick={() => setPage("agent")}>
+              Agent
+            </button>
+            <button className={tabClass(page === "human")} onClick={() => setPage("human")}>
+              Human
+            </button>
+            <button className={tabClass(page === "analysis")} onClick={() => setPage("analysis")}>
+              Analysis
+            </button>
+          </nav>
         </div>
-      </div>
+      </header>
 
       {/* Main Content */}
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: 24, boxSizing: "border-box" }}>
+      <main className="mx-auto w-full max-w-5xl px-6 py-8">
         {page === "agent" && <AgentPage />}
         {page === "human" && <HumanPage />}
         {page === "analysis" && <AnalysisPage />}
-      </div>
+      </main>
     </div>
   );
 }
