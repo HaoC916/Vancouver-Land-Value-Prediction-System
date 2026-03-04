@@ -4,6 +4,14 @@ import { useEffect, useRef, useState } from "react";
 // text is the content shown in the chat bubble.
 type Msg = { role: "user" | "agent"; text: string };
 
+// Command is a parsed version of what the user typed.
+// It helps keep "parsing" separate from "reply building".
+type Command =
+  | { kind: "show_steps" }
+  | { kind: "show_step"; stepNum: number }
+  | { kind: "show_summary" }
+  | { kind: "unknown"; raw: string };
+
 export default function AgentPage() {
   // data: JSON loaded from /data/agent/agent_run_sample.json
   // null means "not loaded yet".
@@ -23,7 +31,7 @@ export default function AgentPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
-  
+
   // Load JSON once when the component mounts (empty dependency array []).
   useEffect(() => {
     fetch("/data/agent/agent_run_sample.json")
@@ -32,8 +40,67 @@ export default function AgentPage() {
       .catch((err) => console.error("Failed to load JSON:", err));
   }, []);
 
-  // Typewriter effect: reveal the agent reply character by character.
-  function typeReply(fullText: string) {
+  // -----------------------------
+  // (1) Parse command
+  // -----------------------------
+  function parseCommand(rawInput: string): Command {
+    // Called when user clicks "Send" or presses Enter
+    // (We keep parsing separate so handleSend stays small.)
+
+    const cmd = rawInput.trim().toLowerCase();
+    if (!cmd) return { kind: "unknown", raw: "" };
+
+    if (cmd === "show steps") {
+      return { kind: "show_steps" };
+    }
+
+    if (cmd === "show summary") {
+      return { kind: "show_summary" };
+    }
+
+    if (cmd.startsWith("show step ")) {
+      // Parse step number from command
+      const stepNum = Number(cmd.replace("show step ", "").trim());
+      if (Number.isFinite(stepNum)) {
+        return { kind: "show_step", stepNum };
+      }
+    }
+
+    return { kind: "unknown", raw: cmd };
+  }
+
+  // -----------------------------
+  // (2) Build reply text
+  // -----------------------------
+  function buildReply(command: Command): string {
+    // Default reply
+    let reply = "Unknown command. Try: show steps | show step 5 | show summary";
+
+    if (data === null) {
+      return "Data not loaded yet.";
+    }
+
+    // 3) Decide reply based on command
+    if (command.kind === "show_steps") {
+      // Show all steps; join into a big string
+      reply = data.steps.map((s: any) => `Step ${s.step}:\n${s.response}`).join("\n\n");
+    } else if (command.kind === "show_step") {
+      const found = data.steps.find((s: any) => s.step === command.stepNum);
+      reply = found ? found.response : `No such step: ${command.stepNum}`;
+    } else if (command.kind === "show_summary") {
+      // Use summary field if it exists
+      reply = data.response ?? "(no summary in json)";
+    }
+
+    return reply;
+  }
+
+  // -----------------------------
+  // (3) Animate output (typewriter)
+  // -----------------------------
+  function animateOutput(fullText: string) {
+    // Typewriter effect: reveal the agent reply character by character.
+
     // 1) Stop any previous typing animation
     if (typingTimerRef.current !== null) {
       window.clearInterval(typingTimerRef.current);
@@ -72,7 +139,9 @@ export default function AgentPage() {
     }, 12); // interval speed (ms). Smaller = faster typing.
   }
 
-  // Called when user clicks "Send" or presses Enter
+  // -----------------------------
+  // Orchestrator: push user msg -> parse -> build -> animate
+  // -----------------------------
   function handleSend() {
     const raw = input;
     const cmd = raw.trim().toLowerCase();
@@ -80,46 +149,27 @@ export default function AgentPage() {
 
     // 1) Push user's message into chat
     setMessages((prev) => [...prev, { role: "user", text: raw }]);
-    
+
     // 2) Clear input box
     setInput("");
 
-    if (data === null) {
-      typeReply("Data not loaded yet.");
-      return;
-    }
+    // parse command
+    const command = parseCommand(raw);
 
-    // Default reply 
-    let reply = "Unknown command. Try: show steps | show step 5 | show summary";
-
-    // 3) Decide reply based on command
-    if (cmd === "show steps") {
-      // Show all steps; join into a big string
-      reply = data.steps.map((s: any) => `Step ${s.step}:\n${s.response}`).join("\n\n");
-    } else if (cmd.startsWith("show step ")) {
-      // Parse step number from command
-      const stepNum = Number(cmd.replace("show step ", ""));
-      const found = data.steps.find((s: any) => s.step === stepNum);
-      reply = found ? found.response : `No such step: ${stepNum}`;
-    } else if (cmd === "show summary") {
-      // Use summary field if it exists
-      reply = data.response ?? "(no summary in json)";
-    }
+    // build reply
+    const reply = buildReply(command);
 
     // 4) Display agent reply using typewriter effect
-    typeReply(reply);
+    animateOutput(reply);
   }
 
   return (
     // space-y-6: vertical spacing between sections
     <div className="space-y-6">
-
       {/* Page header section */}
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Agent Demo</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Simulated chat UI for agent outputs
-        </p>
+        <p className="mt-1 text-sm text-slate-500">Simulated chat UI for agent outputs</p>
       </div>
 
       {/* Controls row: debug toggle + load status */}
@@ -151,15 +201,12 @@ export default function AgentPage() {
         {/* Chat card header */}
         <div className="border-b border-slate-200 px-4 py-3">
           <div className="text-sm font-semibold">Simulated Chat</div>
-          <div className="text-xs text-slate-500">
-            Try: show steps | show step 5 | show summary
-          </div>
+          <div className="text-xs text-slate-500">Try: show steps | show step 5 | show summary</div>
         </div>
 
         {/* Messages area (scrollable) */}
         <div className="h-[420px] w-full min-w-0 overflow-y-auto overflow-x-hidden bg-slate-50 px-4 py-4">
           <div className="flex flex-col gap-3">
-
             {/* Render each message bubble */}
             {messages.map((m, idx) => (
               <div
