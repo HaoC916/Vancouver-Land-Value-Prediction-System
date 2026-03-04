@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 
+// Each message is either from the user or from the agent.
+// text is the content shown in the chat bubble.
 type Msg = { role: "user" | "agent"; text: string };
 
 export default function AgentPage() {
+  // data: JSON loaded from /data/agent/agent_run_sample.json
+  // null means "not loaded yet".
   const [data, setData] = useState<any>(null);
+  // input: current text inside the input box
   const [input, setInput] = useState("");
+  // messages: array of chat messages displayed in the chat history
   const [messages, setMessages] = useState<Msg[]>([]);
+  // showDebug: show the raw JSON debug panel
   const [showDebug, setShowDebug] = useState(false);
 
   // Keep one typing timer at a time
@@ -16,7 +23,8 @@ export default function AgentPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
-
+  
+  // Load JSON once when the component mounts (empty dependency array []).
   useEffect(() => {
     fetch("/data/agent/agent_run_sample.json")
       .then((res) => res.json())
@@ -24,44 +32,56 @@ export default function AgentPage() {
       .catch((err) => console.error("Failed to load JSON:", err));
   }, []);
 
+  // Typewriter effect: reveal the agent reply character by character.
   function typeReply(fullText: string) {
-    // Stop previous typing
+    // 1) Stop any previous typing animation
     if (typingTimerRef.current !== null) {
       window.clearInterval(typingTimerRef.current);
       typingTimerRef.current = null;
     }
 
+    // 2) Add a new "empty" agent message first.
+    //    We'll fill its text gradually in the interval callback.
     let agentIndex = -1;
     setMessages((prev) => {
       agentIndex = prev.length;
       return [...prev, { role: "agent", text: "" }];
     });
 
+    // 3) Start the interval: update the agent message one character at a time
     let i = 0;
     typingTimerRef.current = window.setInterval(() => {
       i++;
 
+      // Update messages state using functional setState
       setMessages((prev) => {
+        // Safety check: if index is invalid, do nothing
         if (agentIndex < 0 || agentIndex >= prev.length) return prev;
+        // Copy the array (React state must be immutable)
         const next = [...prev];
+        // Replace the agent message with updated text
         next[agentIndex] = { ...next[agentIndex], text: fullText.slice(0, i) };
         return next;
       });
 
+      // Stop typing when finished
       if (i >= fullText.length && typingTimerRef.current !== null) {
         window.clearInterval(typingTimerRef.current);
         typingTimerRef.current = null;
       }
-    }, 12);
+    }, 12); // interval speed (ms). Smaller = faster typing.
   }
 
+  // Called when user clicks "Send" or presses Enter
   function handleSend() {
     const raw = input;
     const cmd = raw.trim().toLowerCase();
     if (!cmd) return;
 
-    // push user message
+    // 1) Push user's message into chat
     setMessages((prev) => [...prev, { role: "user", text: raw }]);
+    
+    // 2) Clear input box
     setInput("");
 
     if (data === null) {
@@ -69,24 +89,32 @@ export default function AgentPage() {
       return;
     }
 
+    // Default reply 
     let reply = "Unknown command. Try: show steps | show step 5 | show summary";
 
+    // 3) Decide reply based on command
     if (cmd === "show steps") {
+      // Show all steps; join into a big string
       reply = data.steps.map((s: any) => `Step ${s.step}:\n${s.response}`).join("\n\n");
     } else if (cmd.startsWith("show step ")) {
+      // Parse step number from command
       const stepNum = Number(cmd.replace("show step ", ""));
       const found = data.steps.find((s: any) => s.step === stepNum);
       reply = found ? found.response : `No such step: ${stepNum}`;
     } else if (cmd === "show summary") {
+      // Use summary field if it exists
       reply = data.response ?? "(no summary in json)";
     }
 
+    // 4) Display agent reply using typewriter effect
     typeReply(reply);
   }
 
   return (
+    // space-y-6: vertical spacing between sections
     <div className="space-y-6">
-      {/* Page header */}
+
+      {/* Page header section */}
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Agent Demo</h1>
         <p className="mt-1 text-sm text-slate-500">
@@ -94,7 +122,7 @@ export default function AgentPage() {
         </p>
       </div>
 
-      {/* Controls */}
+      {/* Controls row: debug toggle + load status */}
       <div className="flex items-center justify-between">
         <button
           onClick={() => setShowDebug((v) => !v)}
@@ -107,32 +135,47 @@ export default function AgentPage() {
         </div>
       </div>
 
-      {/* Debug */}
+      {/* Debug panel: only render when showDebug is true */}
       {showDebug && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-2 text-sm font-semibold text-slate-800">Loaded JSON (raw)</div>
+          {/* pre: keeps formatting, scrollable */}
           <pre className="max-h-72 overflow-auto rounded-xl bg-slate-50 p-3 text-xs text-slate-700">
             {data === null ? "Loading..." : JSON.stringify(data, null, 2)}
           </pre>
         </div>
       )}
 
-      {/* Chat card */}
+      {/* Chat card container */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {/* Chat card header */}
         <div className="border-b border-slate-200 px-4 py-3">
           <div className="text-sm font-semibold">Simulated Chat</div>
-          <div className="text-xs text-slate-500">Try: show steps | show step 5 | show summary</div>
+          <div className="text-xs text-slate-500">
+            Try: show steps | show step 5 | show summary
+          </div>
         </div>
 
-        {/* Messages */}
+        {/* Messages area (scrollable) */}
         <div className="h-[420px] w-full min-w-0 overflow-y-auto overflow-x-hidden bg-slate-50 px-4 py-4">
           <div className="flex flex-col gap-3">
+
+            {/* Render each message bubble */}
             {messages.map((m, idx) => (
               <div
                 key={idx}
                 className={[
-                  "min-w-0 max-w-[78%] whitespace-pre-wrap break-words [overflow-wrap:anywhere]",
+                  // Layout constraints:
+                  // - max width is 78% of chat area
+                  // - preserve line breaks and wrap long words
+                  "min-w-0 max-w-[78%] whitespace-pre-wrap [overflow-wrap:anywhere]",
+
+                  // Base bubble style
                   "rounded-2xl border px-4 py-3 text-sm leading-relaxed shadow-sm",
+
+                  // Different styles depending on role:
+                  // user -> right side (ml-auto)
+                  // agent -> left side (mr-auto)
                   m.role === "user"
                     ? "ml-auto border-blue-200 bg-blue-50 text-slate-900"
                     : "mr-auto border-slate-200 bg-white text-slate-900",
@@ -141,11 +184,12 @@ export default function AgentPage() {
                 {m.text}
               </div>
             ))}
+            {/* Invisible element for auto-scroll target */}
             <div ref={bottomRef} />
           </div>
         </div>
 
-        {/* Input */}
+        {/* Input area */}
         <div className="flex items-center gap-2 border-t border-slate-200 p-3">
           <input
             value={input}
@@ -153,6 +197,7 @@ export default function AgentPage() {
             placeholder='Try: "show summary"'
             className="h-11 w-full min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
             onKeyDown={(e) => {
+              // Press Enter to send
               if (e.key === "Enter") handleSend();
             }}
           />
