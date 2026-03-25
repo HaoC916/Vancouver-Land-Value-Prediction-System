@@ -1,0 +1,2 @@
+model,rmse,mae,median_ape,robust_rmse,robust_mae,robust_cap_p99_5,n_train,n_test,n_features_total,n_features_cat,n_features_num,model_backend
+model_hist_gradient_boosting,9998813.166374972,691434.4823717857,0.18183932954782137,1657883.6484134349,489160.0816205338,24533950.000000186,860843.0,664757.0,57.0,9.0,48.0,hist_gradient_boosting
