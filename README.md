@@ -1,173 +1,147 @@
-﻿# CMPT 733 Final Project — WEB CRaWLer
+# CMPT 733 Final Project — WEB CRaWLer
 
 ## Project Overview
-We predict **Vancouver property land assessment values** and study **model reliability across neighbourhoods** using multi-source public data.  
-The project also includes a parallel track comparing a **Human Analyst** workflow vs. an **AI Agent** workflow under the same evaluation protocol.
+This project predicts Vancouver property land assessment value (`CURRENT_LAND_VALUE`) and reports where model errors are larger or smaller across neighbourhoods.
 
-## Team & Roles
-- Chenzheng Li — []
-- Luna Sang — []
-- Ryan Chen — []
-- Wenxiang He — []
+This repository now uses one consolidated final pipeline:
+- clean property data
+- standardize external sources
+- build one merged model table
+- train/evaluate one final model
 
----
+## Google Drive Raw Data Link
+Raw data is shared outside git and should be downloaded from:  
+https://drive.google.com/file/d/1ENhMgJCcVpjG5r3AhCcJd4pXKMpqBuBP/view?usp=sharing
 
-## Dataset Sources (Raw Inputs)
-> **Raw datasets are NOT committed to git.**  
-> Team members should download the shared raw archive from Google Drive and place the extracted files under `data/raw/`.
->
-> **Shared raw archive (Google Drive):**  
-> https://drive.google.com/file/d/1E_TRIkR4O6fVaFZgEzJWl4mH9dc7Auo2/view?usp=sharing
->
-> **Current status:** the project currently **trains only on the Property Tax dataset**. Other sources (Census/IRCC/CMHC/Mortgage rate) are downloaded and ready for later integration.
-### 1) City of Vancouver — Property Tax Report (main training data)
-- **File (raw):** `data/raw/property-tax-report.csv`
-- **Source:** City of Vancouver Open Data Portal (Property Tax Report)
-- **Format:** CSV, **semicolon-separated (`;`)**
-- **Key columns used:**
-  - `CURRENT_LAND_VALUE` (target)
-  - `REPORT_YEAR` (time split)
-  - `NEIGHBOURHOOD_CODE` (group-level reliability analysis)
-  - plus zoning/ownership/age/location proxies (see Feature List below)
+## Target and Evaluation Protocol
+- Prediction target: `CURRENT_LAND_VALUE`
+- Train split: `REPORT_YEAR < 2024`
+- Test split: `REPORT_YEAR >= 2024`
+- Metrics:
+  - RMSE
+  - MAE
+  - Median APE
+  - robust RMSE/MAE (capped using training p99.5)
 
-### 2) Statistics Canada — Census Profile 2021 (downloaded, not yet merged)
-- Files (raw):
-  - `data/raw/statcan_censusprofile2021_data_20260228.csv`
-  - `data/raw/statcan_censusprofile2021_geoindex_20260228.csv`
-  - `data/raw/statcan_censusprofile2021_meta_20260228.txt`
-  - optional: `data/raw/optional/statcan_censusprofile2021_single_geo_20260228.csv`
+## Which Data Are Used in the Final Pipeline?
+### Directly used
+- Property tax:
+  - Raw: `data/raw/property-tax-report.csv`
+  - Cleaned fact table: `data/interim/property_tax_clean.parquet`
+- Mortgage yearly features:
+  - Raw: `data/raw/statcan_mortgage_rate_5yr_20260228.csv`
+  - Standardized: `data/interim/mortgage_rate_yearly.parquet`
+- IRCC permanent resident yearly features:
+  - Raw: `data/raw/ircc_pr_cma_20260228.xlsx`
+  - Standardized: `data/interim/ircc_pr_yearly.parquet`
+- IRCC study permit yearly features:
+  - Raw: `data/raw/ircc_studypermits_pt_studylevel_20260228.xlsx`
+  - Standardized: `data/interim/ircc_study_permits_yearly.parquet`
+- CMHC rental yearly features:
+  - Raw: `data/raw/cmhc_vancouver_rental_supply_change_20260228.csv`
+  - Standardized: `data/interim/cmhc_rental_yearly.parquet`
 
-### 3) IRCC — Permanent Residents / Study Permit Holders (downloaded, not yet merged)
-- Files (raw):
-  - `data/raw/ircc_pr_cma_20260228.xlsx`
-  - `data/raw/ircc_studypermits_pt_studylevel_20260228.xlsx`
+### Prepared but deferred by default
+- Census profile:
+  - Raw:
+    - `data/raw/statcan_censusprofile2021_data_20260228.csv`
+    - `data/raw/statcan_censusprofile2021_geoindex_20260228.csv`
+    - `data/raw/statcan_censusprofile2021_meta_20260228.txt`
+    - `data/raw/optional/statcan_censusprofile2021_single_geo_20260228.csv`
+  - Standardized:
+    - `data/interim/census_profile_standardized.parquet`
+- Census merge is attempted only when `--merge_census` is passed and a robust shared geography key exists.
+- In current data, census remains deferred because no robust shared key is available.
 
-### 4) StatCan — Mortgage Rate (downloaded, not yet merged)
-- File (raw): `data/raw/statcan_mortgage_rate_5yr_20260228.csv`
+## Final Data Pipeline Outputs
+- Final merged table:
+  - `data/processed/model_table.parquet`
+- Final table summary:
+  - `reports/figures/model_table_summary.csv`
 
-### 5) CMHC — Vancouver Rental Indicators (downloaded, not yet merged)
-- File (raw): `data/raw/cmhc_vancouver_rental_supply_change_20260228.csv`
+The final merged table includes:
+- property-level engineered features
+- lag/yoy macro features
+- leakage-safe neighbourhood/FSA historical features (previous-year and rolling past windows only)
 
----
+## What the Feature-Importance Figure Means
+The feature-importance chart (`reports/figures/model_feature_importance_top20.png`) shows which inputs the model relied on most for prediction.
 
-## Current Data Pipeline (What is used now)
+- Larger bar = feature contributed more to predictive performance.
+- Smaller bar = feature contributed less in this setup.
+- Importance is relative.
+- Importance is not causation.
 
-### (1) What raw data is used before cleaning?
-- **Raw training source:** `data/raw/property-tax-report.csv`
-- **Used by cleaning script:** `src/data/clean_property_tax.py`
+Plain-language takeaway:
+- property location/structure features dominate
+- local historical context helps
+- broad yearly macro signals contribute less
 
-### (2) What cleaned data is used for modeling?
-- **Cleaned dataset (parquet):** `data/interim/property_tax_clean.parquet`
-- **Produced by:** `src/data/clean_property_tax.py`
-- **Used by models:** `src/models/baseline.py`, `src/models/human_suite.py`
+## Plain-Language Description of Key Features
+| Feature | Plain-language meaning | Why it may matter | Source dataset |
+|---|---|---|---|
+| `LEGAL_TYPE` | Legal form of the property. | Different legal forms align with different value patterns. | `property-tax-report.csv` |
+| `PROPERTY_POSTAL_CODE` | Full postal code. | Captures very local location differences. | `property-tax-report.csv` |
+| `ZONING_DISTRICT` | City zoning district. | Zoning rules influence land use/value potential. | `property-tax-report.csv` |
+| `ZONING_CLASSIFICATION` | Detailed zoning category. | Adds finer land-use context. | `property-tax-report.csv` |
+| `NEIGHBOURHOOD_CODE` | City neighbourhood code. | Neighbourhoods have distinct market levels. | `property-tax-report.csv` |
+| `YEAR_BUILT` | Year built. | Property age profile often correlates with value patterns. | `property-tax-report.csv` |
+| `POSTAL_FSA` | First 3 postal characters (Forward Sortation Area). | Coarse local area grouping. | Engineered from `property-tax-report.csv` |
+| `neigh_prev_year_median_land_value` | Previous-year neighbourhood median value. | Local historical market level. | Engineered from historical property tax data |
+| `neigh_prev_3yr_rolling_mean_land_value` | Rolling average over prior years in same neighbourhood. | Smoother local trend signal. | Engineered from historical property tax data |
+| `fsa_prev_year_median_land_value` | Previous-year median value in same FSA. | Postal-area historical context. | Engineered from historical property tax data |
+| `cmhc_rental_supply_existing_converted_lag1` | Previous-year CMHC converted rental supply indicator. | Lagged rental-market context. | `cmhc_vancouver_rental_supply_change_20260228.csv` |
 
----
+## Final Model Outputs
+### Core outputs
+- `reports/figures/model_metrics.csv`
+- `reports/figures/model_neighbourhood_error.csv`
+- `reports/figures/model_feature_importance.csv`
+- `reports/figures/model_feature_importance_grouped.csv`
 
-## Modeling Protocol
+### Public-friendly figures
+![Model Scatter](reports/figures/model_scatter_public.png)
+![Model Error Distribution](reports/figures/model_error_distribution_public.png)
+![Model Neighbourhood Difficulty](reports/figures/model_neighbourhood_difficulty_public.png)
+![Model Feature Importance Top20](reports/figures/model_feature_importance_top20.png)
 
-### (3) Train/Test split
-We use a **time-aware split** based on `REPORT_YEAR`:
-- **Train:** `REPORT_YEAR < 2024`
-- **Test:** `REPORT_YEAR >= 2024`
-
-This avoids temporal leakage and matches the course feedback requirement for an explicit training/testing split.
-
-### (4) Features used for training (column name + meaning + type)
-The current baseline model trains on the cleaned parquet using the following input features:
-
-**Categorical (one-hot encoded)**
-- `LEGAL_TYPE` — ownership/legal structure *(categorical)*
-- `ZONING_DISTRICT` — zoning district code *(categorical)*
-- `ZONING_CLASSIFICATION` — zoning/land-use category *(categorical)*
-- `NEIGHBOURHOOD_CODE` — neighbourhood identifier *(categorical)*
-- `PROPERTY_POSTAL_CODE` — location proxy *(categorical)*
-
-**Numeric (median imputed + scaled)**
-- `LAND_COORDINATE` — location proxy coordinate *(numeric; coerced to numeric in cleaning)*
-- `YEAR_BUILT` — building year *(numeric)*
-- `BIG_IMPROVEMENT_YEAR` — major improvement year *(numeric)*
-
-> Notes:
-> - Missing values are handled by `SimpleImputer` (most frequent for categorical, median for numeric).
-> - Numeric features are scaled using `MaxAbsScaler` to stabilize Ridge regression.
-
-### (5) Prediction target (column name + meaning + type)
-- `CURRENT_LAND_VALUE` — assessed **land value** in CAD *(numeric)*
-
-This is the variable the model predicts.
-
----
-
-## Results / Outputs
-
-All outputs are written to `reports/figures/`.
-
-### Public-friendly figures (recommended for slides)
-These figures are designed for non-technical audiences (e.g., policy stakeholders).
-
-- `reports/figures/baseline_scatter_public.png` — model estimate vs official land value (CAD, log scale) with “perfect match” line  
-- `reports/figures/baseline_error_distribution_public.png` — distribution of estimation errors (CAD; extreme cases clipped)  
-- `reports/figures/baseline_neighbourhood_difficulty_public.png` — top-20 neighbourhoods by typical error (CAD)
-
-#### How close are our predictions?
-![Baseline scatter public](reports/figures/baseline_scatter_public.png)
-
-#### How big are the errors?
-![Baseline error distribution public](reports/figures/baseline_error_distribution_public.png)
-
-#### Which neighbourhoods are harder to estimate?
-![Baseline neighbourhood difficulty public](reports/figures/baseline_neighbourhood_difficulty_public.png)
-
----
-
-### Technical figures (for modeling/debugging)
-- `reports/figures/baseline_scatter_log.png` — predicted vs actual (log1p) with y=x reference line  
-- `reports/figures/baseline_residuals_clip.png` — residual histogram (clipped for readability)  
-- `reports/figures/baseline_neighbourhood_mae_top20.png` — top-20 neighbourhoods by MAE  
-- `reports/figures/baseline_neighbourhood_error.csv` — neighbourhood-level error summary table  
-
-
----
+## Current Finding
+- Location/structure variables remain the main predictive drivers.
+- Extra coarse macro information adds limited gain.
+- Local historical features are useful, but the consolidated model still does not outperform the strongest property-only benchmark from earlier experiments.
 
 ## Setup
-Using `pip`:
-
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
----
-## How to Run (Current Human Track)
-### 1) Clean raw CSV → parquet
-input:
-- `data/raw/property-tax-report.csv` (semicolon-separated)
-run:
+
+## Run Final Pipeline
 ```bash
-python -m src.data.clean_property_tax \
-  --in_path data/raw/property-tax-report.csv \
-  --out_path data/interim/property_tax_clean.parquet
+python -m src.data.clean_property_tax --in_path data/raw/property-tax-report.csv --out_path data/interim/property_tax_clean.parquet
 
+python -m src.data.standardize_mortgage_rate
+python -m src.data.standardize_ircc_pr
+python -m src.data.standardize_ircc_study_permits
+python -m src.data.standardize_cmhc_rental
+python -m src.data.standardize_census_profile
+
+python -m src.data.build_model_table
+python -m src.models.train_model
 ```
-output:
-- `data/interim/property_tax_clean.parquet`
-- `data/interim/property_tax_clean.parquet`
 
-### 2) Run baseline model
+Optional census merge attempt:
 ```bash
-python -m src.models.baseline
-# optional sampling:
-python -m src.models.baseline --sample_frac 0.1
+python -m src.data.build_model_table --merge_census
 ```
-output(example):
-- `reports/figures/baseline_scatter_log.png`
-- `reports/figures/baseline_neighbourhood_error.csv`
-- `reports/figures/baseline_neighbourhood_mae_top20.png`
 
-### Run human-track suite (optional)
-```bahs
-python -m src.models.human_suite
-```
----
+## Data Governance
+- Raw/interim/processed data files are not committed to git.
+- Do not commit local data artifacts under `data/`.
+
+## Project Evolution Note
+Earlier experimental entry points were consolidated into this final submission pipeline to reduce maintenance overhead and avoid version confusion.
+
 ## License
-MIT(see `LICENSE`)
+MIT (see `LICENSE`).
