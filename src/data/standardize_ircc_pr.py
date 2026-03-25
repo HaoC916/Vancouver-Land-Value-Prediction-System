@@ -31,7 +31,7 @@ def build_ircc_pr_yearly(in_path: Path, sheet_name: str) -> tuple[pd.DataFrame, 
     out_df = pd.DataFrame({"REPORT_YEAR": years_sorted})
     scope_note = ""
 
-    # We prefer Vancouver CMA for v1 because it is closer to the project geography.
+    # We prefer Vancouver CMA because it is closer to the project geography.
     if vancouver_row is not None:
         out_df["ircc_pr_vancouver_cma"] = [
             parse_number(vancouver_row[year_cols[y]] if year_cols[y] < len(vancouver_row) else "")

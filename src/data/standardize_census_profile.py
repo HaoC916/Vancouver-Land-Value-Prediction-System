@@ -159,7 +159,7 @@ def main() -> None:
         "--meta_path",
         type=str,
         default="data/raw/statcan_censusprofile2021_meta_20260228.txt",
-        help="Raw census meta text path (validated for existence only in v1)",
+        help="Raw census meta text path (validated for existence only)",
     )
     parser.add_argument(
         "--out_path",

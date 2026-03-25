@@ -1,15 +1,18 @@
+from __future__ import annotations
+
 import argparse
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, MaxAbsScaler
+from sklearn.preprocessing import OrdinalEncoder
 
 from src.eval.baseline_reports import write_baseline_reports
+from src.eval.feature_importance import save_feature_importance
 from src.eval.metrics import compute_metrics, prediction_sanity_stats, scale_warning
 from src.viz.baseline_plots import save_model_plots
 
@@ -18,13 +21,51 @@ REPORT_YEAR_COL = "REPORT_YEAR"
 ID_EXCLUDE_COLS = {"PID"}
 
 
-def load_data(path: Path) -> pd.DataFrame:
-    df = pd.read_parquet(path).copy()
+def _choose_model():
+    try:
+        from lightgbm import LGBMRegressor  # type: ignore
 
-    if TARGET_COL not in df.columns:
-        raise ValueError(f"Missing target column: {TARGET_COL}")
-    if REPORT_YEAR_COL not in df.columns:
-        raise ValueError(f"Missing split column: {REPORT_YEAR_COL}")
+        return (
+            "lightgbm",
+            LGBMRegressor(
+                random_state=42,
+                n_estimators=400,
+                learning_rate=0.05,
+            ),
+        )
+    except Exception:
+        pass
+
+    try:
+        from xgboost import XGBRegressor  # type: ignore
+
+        return (
+            "xgboost",
+            XGBRegressor(
+                objective="reg:squarederror",
+                random_state=42,
+                n_estimators=400,
+                learning_rate=0.05,
+            ),
+        )
+    except Exception:
+        pass
+
+    return (
+        "hist_gradient_boosting",
+        HistGradientBoostingRegressor(random_state=42),
+    )
+
+
+def load_data(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(f"Input parquet not found: {path}")
+
+    df = pd.read_parquet(path).copy()
+    required = [TARGET_COL, REPORT_YEAR_COL]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns in model table: {missing}")
 
     df[TARGET_COL] = pd.to_numeric(df[TARGET_COL], errors="coerce")
     df[REPORT_YEAR_COL] = pd.to_numeric(df[REPORT_YEAR_COL], errors="coerce")
@@ -38,51 +79,53 @@ def infer_feature_columns(df: pd.DataFrame) -> tuple[list[str], list[str], list[
     excluded = {TARGET_COL, REPORT_YEAR_COL}.union(ID_EXCLUDE_COLS.intersection(df.columns))
     feature_cols = [c for c in df.columns if c not in excluded]
     if not feature_cols:
-        raise ValueError("No feature columns available after exclusions.")
+        raise ValueError("No usable feature columns after exclusions.")
 
     numeric_cols = [c for c in feature_cols if pd.api.types.is_numeric_dtype(df[c])]
     cat_cols = [c for c in feature_cols if c not in numeric_cols]
     return feature_cols, cat_cols, numeric_cols
 
 
-def build_pipeline(cat_cols: list[str], numeric_cols: list[str]) -> Pipeline:
+def build_pipeline(cat_cols: list[str], numeric_cols: list[str], model) -> Pipeline:
     transformers = []
     if cat_cols:
         cat_pipe = Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="most_frequent")),
-                ("onehot", OneHotEncoder(handle_unknown="ignore")),
+                (
+                    "encode",
+                    OrdinalEncoder(
+                        handle_unknown="use_encoded_value",
+                        unknown_value=-1,
+                    ),
+                ),
             ]
         )
         transformers.append(("cat", cat_pipe, cat_cols))
 
     if numeric_cols:
-        num_pipe = Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scale", MaxAbsScaler()),
-            ]
-        )
+        num_pipe = Pipeline(steps=[("imputer", SimpleImputer(strategy="median"))])
         transformers.append(("num", num_pipe, numeric_cols))
 
     if not transformers:
-        raise ValueError("Could not build preprocessors: no categorical or numeric features found.")
+        raise ValueError("Could not build preprocessors: no numeric/categorical columns found.")
 
     pre = ColumnTransformer(transformers=transformers, remainder="drop")
-    model = Ridge(random_state=42)
     return Pipeline(steps=[("preprocess", pre), ("model", model)])
 
 
-def run_baseline_merged(
-    data_path: Path, sample_frac: float = 1.0, save_outputs: bool = True
-) -> dict[str, float]:
+def train_and_evaluate(
+    data_path: Path,
+    sample_frac: float = 1.0,
+    save_outputs: bool = True,
+) -> dict[str, object]:
     df = load_data(data_path)
     feature_cols, cat_cols, numeric_cols = infer_feature_columns(df)
 
     train_df = df[df[REPORT_YEAR_COL] < 2024].copy()
     test_df = df[df[REPORT_YEAR_COL] >= 2024].copy()
     if train_df.empty or test_df.empty:
-        raise ValueError("Train/test split is empty. Check REPORT_YEAR values in model table.")
+        raise ValueError("Train/test split is empty. Check REPORT_YEAR values.")
 
     if sample_frac < 1.0:
         train_df = train_df.sample(frac=sample_frac, random_state=42)
@@ -93,12 +136,16 @@ def run_baseline_merged(
     X_test = test_df[feature_cols]
     y_test = test_df[TARGET_COL]
 
+    model_backend, model = _choose_model()
+    print(f"[train_model] Using model backend: {model_backend}")
+
+    pipeline = build_pipeline(cat_cols, numeric_cols, model)
     y_train_log = np.log1p(y_train)
-    pipeline = build_pipeline(cat_cols, numeric_cols)
     pipeline.fit(X_train, y_train_log)
 
     y_pred_log = pipeline.predict(X_test)
     y_pred = np.expm1(y_pred_log)
+    y_pred = np.maximum(y_pred, 0.0)
 
     y_true_stats, y_pred_stats = prediction_sanity_stats(y_test, y_pred)
     print(
@@ -123,7 +170,7 @@ def run_baseline_merged(
     print(f"Robust RMSE: {metrics['robust_rmse']:,.2f}")
     print(f"Robust MAE: {metrics['robust_mae']:,.2f}")
 
-    metrics_with_meta: dict[str, float] = {
+    result: dict[str, object] = {
         "rmse": float(metrics["rmse"]),
         "mae": float(metrics["mae"]),
         "median_ape": float(metrics["median_ape"]),
@@ -135,31 +182,55 @@ def run_baseline_merged(
         "n_features_total": float(len(feature_cols)),
         "n_features_cat": float(len(cat_cols)),
         "n_features_num": float(len(numeric_cols)),
+        "model_backend": model_backend,
     }
 
     if save_outputs:
         figures_dir = Path("reports/figures")
-        if "NEIGHBOURHOOD_CODE" not in test_df.columns:
-            test_df = test_df.copy()
-            test_df["NEIGHBOURHOOD_CODE"] = "Unknown"
-        report_path = figures_dir / "baseline_merged_neighbourhood_error.csv"
-        summary_df = write_baseline_reports(y_test, y_pred, test_df, report_path)
-        save_model_plots(y_test, y_pred, summary_df, figures_dir, "baseline_merged")
+        figures_dir.mkdir(parents=True, exist_ok=True)
 
-        metrics_path = figures_dir / "baseline_merged_metrics.csv"
-        pd.DataFrame([{"model": "baseline_merged", **metrics_with_meta}]).to_csv(
-            metrics_path, index=False
+        report_df = test_df.copy()
+        if "NEIGHBOURHOOD_CODE" not in report_df.columns:
+            report_df["NEIGHBOURHOOD_CODE"] = "Unknown"
+
+        summary_df = write_baseline_reports(
+            y_test,
+            y_pred,
+            report_df,
+            figures_dir / "model_neighbourhood_error.csv",
+        )
+        save_model_plots(
+            y_test,
+            y_pred,
+            summary_df,
+            figures_dir,
+            "model",
         )
 
-    return metrics_with_meta
+        metrics_row = {"model": f"model_{model_backend}", **result}
+        pd.DataFrame([metrics_row]).to_csv(
+            figures_dir / "model_metrics.csv",
+            index=False,
+        )
+
+        save_feature_importance(
+            pipeline=pipeline,
+            X_test=X_test,
+            y_test=np.log1p(y_test),
+            out_csv_path=figures_dir / "model_feature_importance.csv",
+            out_png_path=figures_dir / "model_feature_importance_top20.png",
+            grouped_csv_path=figures_dir / "model_feature_importance_grouped.csv",
+        )
+
+    return result
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Merged-table baseline model on model_table_v1.")
+    parser = argparse.ArgumentParser(description="Train and evaluate final model on merged model table.")
     parser.add_argument(
         "--data_path",
         type=str,
-        default="data/processed/model_table_v1.parquet",
+        default="data/processed/model_table.parquet",
         help="Path to merged model table parquet",
     )
     parser.add_argument(
@@ -170,11 +241,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    data_path = Path(args.data_path)
-    if not data_path.exists():
-        raise FileNotFoundError(f"Parquet not found: {data_path}")
-
-    run_baseline_merged(data_path=data_path, sample_frac=args.sample_frac, save_outputs=True)
+    train_and_evaluate(Path(args.data_path), sample_frac=args.sample_frac, save_outputs=True)
 
 
 if __name__ == "__main__":

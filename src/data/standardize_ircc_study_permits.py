@@ -36,7 +36,7 @@ def build_ircc_study_permits_yearly(
         }
     )
 
-    # We keep only BC total in v1.
+    # We keep only BC total in the current pipeline.
     # The category rows under BC ("Post Secondary", etc.) are present, but their totals
     # are ambiguous in this extract and do not reconcile clearly with BC totals in one pass.
     note = (
