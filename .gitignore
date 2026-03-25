@@ -39,3 +39,4 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+data/raw.zip
