@@ -1,1 +1,1 @@
-﻿"""Visualization helpers."""
+﻿"""Visualization utilities."""
