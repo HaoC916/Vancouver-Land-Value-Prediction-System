@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
@@ -116,6 +118,8 @@ def build_pipeline(cat_cols: list[str], numeric_cols: list[str], model) -> Pipel
 
 def train_and_evaluate(
     data_path: Path,
+    artifact_path: Path,
+    metadata_path: Path,
     sample_frac: float = 1.0,
     save_outputs: bool = True,
 ) -> dict[str, object]:
@@ -188,6 +192,8 @@ def train_and_evaluate(
     if save_outputs:
         figures_dir = Path("reports/figures")
         figures_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
 
         report_df = test_df.copy()
         if "NEIGHBOURHOOD_CODE" not in report_df.columns:
@@ -222,6 +228,32 @@ def train_and_evaluate(
             grouped_csv_path=figures_dir / "model_feature_importance_grouped.csv",
         )
 
+        bundle = {
+            "pipeline": pipeline,
+            "feature_cols": feature_cols,
+            "cat_cols": cat_cols,
+            "numeric_cols": numeric_cols,
+            "target_col": TARGET_COL,
+            "report_year_col": REPORT_YEAR_COL,
+            "model_backend": model_backend,
+        }
+        joblib.dump(bundle, artifact_path)
+
+        metadata = {
+            "target": TARGET_COL,
+            "prediction_note": "This model predicts assessed land value (CURRENT_LAND_VALUE), not guaranteed sale price.",
+            "feature_names_used": feature_cols,
+            "n_features_total": len(feature_cols),
+            "train_year_rule": "REPORT_YEAR < 2024",
+            "test_year_rule": "REPORT_YEAR >= 2024",
+            "default_report_year": int(df[REPORT_YEAR_COL].max()),
+            "model_backend": model_backend,
+            "artifact_path": str(artifact_path),
+        }
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        print(f"[train_model] Saved model artifact: {artifact_path}")
+        print(f"[train_model] Saved model metadata: {metadata_path}")
+
     return result
 
 
@@ -239,9 +271,27 @@ def main() -> None:
         default=1.0,
         help="Optional fraction to sample from train/test for faster runs",
     )
+    parser.add_argument(
+        "--artifact_path",
+        type=str,
+        default="artifacts/land_value_model.joblib",
+        help="Path to save trained inference artifact",
+    )
+    parser.add_argument(
+        "--metadata_path",
+        type=str,
+        default="artifacts/model_metadata.json",
+        help="Path to save model metadata JSON",
+    )
     args = parser.parse_args()
 
-    train_and_evaluate(Path(args.data_path), sample_frac=args.sample_frac, save_outputs=True)
+    train_and_evaluate(
+        Path(args.data_path),
+        artifact_path=Path(args.artifact_path),
+        metadata_path=Path(args.metadata_path),
+        sample_frac=args.sample_frac,
+        save_outputs=True,
+    )
 
 
 if __name__ == "__main__":

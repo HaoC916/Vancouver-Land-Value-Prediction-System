@@ -53,7 +53,7 @@ engineered_group_feature,fsa_prev_year_property_count,created
 engineered_group_feature,fsa_prev_2yr_median_land_value,created
 engineered_group_feature,fsa_prev_3yr_rolling_median_land_value,created
 engineered_group_feature,fsa_prev_3yr_growth_trend,created
-source_status,census_profile,deferred_no_shared_geo_key
+source_status,census_profile,deferred_default
 table,total_rows,1525600
 table,total_columns,60
 table,new_columns_count,47

@@ -1,5 +1,7 @@
-﻿numpy
+numpy
 pandas
 scikit-learn
 matplotlib
 jupyter
+joblib
+streamlit
