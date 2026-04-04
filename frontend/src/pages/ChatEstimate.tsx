@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * ------------------------------------------------------------
@@ -15,7 +15,7 @@ const API_BASE = "http://127.0.0.1:8000";
  */
 
 /**
- * One chat message bubble
+ * One chat bubble message.
  */
 type Msg = {
   role: "user" | "agent";
@@ -23,7 +23,7 @@ type Msg = {
 };
 
 /**
- * Current collected property profile
+ * Current collected property profile.
  * These fields should match the backend PredictRequest.
  */
 type Profile = {
@@ -38,7 +38,7 @@ type Profile = {
 };
 
 /**
- * Predict result returned by backend /predict
+ * Prediction result returned by backend /predict.
  */
 type PredictResult = {
   point_estimate: number;
@@ -50,7 +50,7 @@ type PredictResult = {
 };
 
 /**
- * Health response returned by backend /health
+ * Health response returned by backend /health.
  */
 type HealthResponse = {
   ok: boolean;
@@ -60,8 +60,8 @@ type HealthResponse = {
 };
 
 /**
- * Options response returned by backend /options
- * In v3, options are filtered using context.
+ * Options response returned by backend /options.
+ * These options are already filtered by backend context.
  */
 type OptionsResponse = {
   LEGAL_TYPE: string[];
@@ -75,7 +75,7 @@ type OptionsResponse = {
 };
 
 /**
- * A single guided step in chat
+ * One guided step definition.
  */
 type Step = {
   field: keyof Profile;
@@ -132,48 +132,43 @@ const STEPS: Step[] = [
     required: true,
     placeholder: "Example: V6B1A1",
     prompt: "Step 1 of 8 — Please enter the property postal code.",
-    helpText:
-      "Use a valid Canadian postal code, for example: V6B1A1",
+    helpText: "Use a valid Canadian postal code, for example: V6B1A1",
   },
   {
     field: "LEGAL_TYPE",
     label: "Legal Type",
     kind: "option",
     required: true,
-    placeholder: "Choose a legal type",
+    placeholder: "Type one of the suggested legal types",
     prompt: "Step 2 of 8 — Please choose the legal type.",
-    helpText:
-      "This list is now filtered by the context collected so far.",
+    helpText: "This list is now filtered by the context collected so far.",
   },
   {
     field: "ZONING_DISTRICT",
     label: "Zoning District",
     kind: "option",
     required: true,
-    placeholder: "Choose a zoning district",
+    placeholder: "Type one of the suggested zoning districts",
     prompt: "Step 3 of 8 — Please choose the zoning district.",
-    helpText:
-      "This list is filtered by postal code / context when possible.",
+    helpText: "This list is filtered by postal code / context when possible.",
   },
   {
     field: "ZONING_CLASSIFICATION",
     label: "Zoning Classification",
     kind: "option",
     required: true,
-    placeholder: "Choose a zoning classification",
+    placeholder: "Type one of the suggested zoning classifications",
     prompt: "Step 4 of 8 — Please choose the zoning classification.",
-    helpText:
-      "This list is filtered by earlier selections when possible.",
+    helpText: "This list is filtered by earlier selections when possible.",
   },
   {
     field: "NEIGHBOURHOOD_CODE",
     label: "Neighbourhood Code",
     kind: "option",
     required: true,
-    placeholder: "Choose a neighbourhood code",
+    placeholder: "Type one of the suggested neighbourhood codes",
     prompt: "Step 5 of 8 — Please choose the neighbourhood code.",
-    helpText:
-      "This list is filtered by postal / zoning context when possible.",
+    helpText: "This list is filtered by postal / zoning context when possible.",
   },
   {
     field: "YEAR_BUILT",
@@ -193,7 +188,7 @@ const STEPS: Step[] = [
     placeholder: "Example: 2026 or type skip",
     prompt: "Step 7 of 8 — Report Year is optional. Enter a year, or type skip.",
     helpText:
-      "For stability, Report Year should stay inside the available model years.",
+      "Report Year should stay inside the available model years.",
   },
   {
     field: "BIG_IMPROVEMENT_YEAR",
@@ -201,9 +196,9 @@ const STEPS: Step[] = [
     kind: "number",
     required: false,
     placeholder: "Example: 2015 or type skip",
-    prompt: "Step 8 of 8 — Big Improvement Year is optional. Enter a year, or type skip.",
-    helpText:
-      "If there is no major improvement year, type skip.",
+    prompt:
+      "Step 8 of 8 — Big Improvement Year is optional. Enter a year, or type skip.",
+    helpText: "If there is no major improvement year, type skip.",
   },
 ];
 
@@ -215,7 +210,6 @@ const STEPS: Step[] = [
 
 /**
  * Format money without decimals.
- * Example: 590746 -> CA$590,746
  */
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-CA", {
@@ -226,14 +220,14 @@ function formatCurrency(value: number): string {
 }
 
 /**
- * Check if a field has a meaningful value
+ * Check whether a value should be treated as filled.
  */
 function hasValue(value: unknown): boolean {
   return value !== "" && value !== null && value !== undefined;
 }
 
 /**
- * Find missing required fields
+ * Find missing required fields.
  */
 function getMissingFields(profile: Profile): string[] {
   return REQUIRED_FIELDS.filter((field) => !hasValue(profile[field])).map(
@@ -242,14 +236,14 @@ function getMissingFields(profile: Profile): string[] {
 }
 
 /**
- * Normalize user-facing text for matching
+ * Normalize free text for matching / comparison.
  */
 function normalizeText(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 /**
- * Normalize postal code:
+ * Normalize Canadian postal code:
  * - uppercase
  * - remove spaces / dashes
  */
@@ -260,10 +254,15 @@ function normalizePostalCode(raw: string): string | null {
 }
 
 /**
- * Match an input against a list of valid options.
- * We support:
+ * Match user input to one valid option.
+ *
+ * Matching rules:
  * 1. exact match
  * 2. unique prefix match
+ *
+ * Example:
+ * - "land" can match "LAND"
+ * - "ha" can match "HA-2" only if it is the unique prefix match
  */
 function matchOption(input: string, options: string[]): string | null {
   const normalizedInput = normalizeText(input);
@@ -280,7 +279,7 @@ function matchOption(input: string, options: string[]): string | null {
 }
 
 /**
- * Read options for the current field from backend response
+ * Read filtered options for one field from backend response.
  */
 function getOptionsForField(
   field: keyof Profile,
@@ -303,10 +302,8 @@ function getOptionsForField(
 }
 
 /**
- * Build query params for /options
- * This is the main v3 improvement:
- * the frontend now sends current context to backend,
- * so backend can return filtered option lists.
+ * Build query params for backend /options
+ * using the currently known profile context.
  */
 function buildOptionsQuery(profile: Profile): string {
   const params = new URLSearchParams();
@@ -334,12 +331,76 @@ function buildOptionsQuery(profile: Profile): string {
 }
 
 /**
+ * Build the chat prompt for the current step.
+ *
+ * IMPORTANT DESIGN CHOICE:
+ * - The chat remains the only interaction area.
+ * - We do NOT render any separate dropdown/filter UI block.
+ * - Filtered options are injected directly into the chat prompt.
+ *
+ * Also:
+ * - For option steps, we do NOT print a generic "Hint: ..." first
+ *   and then another option hint.
+ * - We only print ONE clean hint block.
+ */
+function buildStepPromptMessage(
+  step: Step,
+  options: OptionsResponse | null
+): string {
+  let text = step.prompt;
+
+  // Non-option steps keep the regular help text
+  if (step.kind !== "option") {
+    text += `\n\nHint: ${step.helpText}`;
+  }
+
+  // Option steps only show the filtered option hint
+  if (step.kind === "option") {
+    const filteredOptions = getOptionsForField(step.field, options);
+
+    if (filteredOptions.length === 0) {
+      text +=
+        "\n\nHint: I do not have filtered options yet. Please type a value manually, or check earlier fields.";
+    } else if (filteredOptions.length === 1) {
+      text += `\n\nHint: The filtered ${step.label.toLowerCase()} is: ${filteredOptions[0]}.`;
+    } else {
+      const previewCount = 8;
+      const shown = filteredOptions.slice(0, previewCount);
+      const remaining = filteredOptions.length - shown.length;
+
+      text += `\n\nHint: The available ${step.label.toLowerCase()} options are: ${shown.join(", ")}`;
+
+      if (remaining > 0) {
+        text += `, and ${remaining} more`;
+      }
+
+      text += ".";
+    }
+
+    text += "\n\nPlease type one of the suggested options.";
+  }
+
+  // Optional steps support skip
+  if (!step.required) {
+    text += "\n\nYou can also type: skip";
+  }
+
+  return text;
+}
+
+/**
  * Validate one step input.
  *
- * This function is stricter in v3:
- * - report year must stay inside backend year bounds
+ * Validation rules:
+ * - report year must stay inside backend-supported year bounds
  * - year built cannot be after report year
  * - big improvement year cannot be after report year
+ * - categorical fields must match filtered options
+ *
+ * NOTE:
+ * Because REPORT_YEAR is no longer prefilled,
+ * when REPORT_YEAR is still empty we use maxReportYear
+ * as the upper fallback for related year checks.
  */
 function validateStepInput(
   step: Step,
@@ -387,7 +448,7 @@ function validateStepInput(
         ok: false,
         message:
           `I couldn't match that to a valid ${step.label}. ` +
-          `Please use the filtered dropdown or type an exact known option.`,
+          `Please type one of the suggested options from the latest chat hint.`,
       };
     }
 
@@ -414,8 +475,7 @@ function validateStepInput(
       if (year < 1800 || year > targetReportYear) {
         return {
           ok: false,
-          message:
-            `Year Built should be between 1800 and ${targetReportYear}.`,
+          message: `Year Built should be between 1800 and ${targetReportYear}.`,
         };
       }
 
@@ -428,12 +488,10 @@ function validateStepInput(
         return {
           ok: false,
           message:
-            `Report Year should stay between ${minReportYear} and ${maxReportYear}, ` +
-            `because the current model only has stable lookup support in that range.`,
+            `Report Year should stay between ${minReportYear} and ${maxReportYear}.`,
         };
       }
 
-      // If YEAR_BUILT already exists, report year should not be earlier
       if (hasValue(profile.YEAR_BUILT) && year < Number(profile.YEAR_BUILT)) {
         return {
           ok: false,
@@ -488,20 +546,22 @@ function validateStepInput(
  */
 export default function ChatEstimate() {
   /**
-   * Chat history
+   * Chat history.
+   *
+   * We KEEP the typewriter animation because that is part of the
+   * immersive conversation feel you want.
    */
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "agent",
       text:
         "Hi! This page uses a guided chat flow.\n\n" +
-        "To improve prediction stability, I will collect one field at a time.\n" +
-        "For categorical fields, I will show filtered valid options whenever possible.",
+        "The chat remains the main interaction area. For each categorical step, I will show filtered suggested options directly inside the conversation.",
     },
   ]);
 
   /**
-   * Current text in input box
+   * Current input text
    */
   const [input, setInput] = useState("");
 
@@ -511,12 +571,12 @@ export default function ChatEstimate() {
   const [profile, setProfile] = useState<Profile>(emptyProfile);
 
   /**
-   * Latest predict result
+   * Latest prediction result
    */
   const [result, setResult] = useState<PredictResult | null>(null);
 
   /**
-   * Backend status
+   * Backend connection status
    */
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
 
@@ -526,24 +586,14 @@ export default function ChatEstimate() {
   const [healthInfo, setHealthInfo] = useState<HealthResponse | null>(null);
 
   /**
-   * Backend filtered options
+   * Current filtered options from backend
    */
   const [options, setOptions] = useState<OptionsResponse | null>(null);
 
   /**
-   * Current guided step index
+   * Current step index in the guided flow
    */
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
-
-  /**
-   * Selected option from dropdown
-   */
-  const [selectedOption, setSelectedOption] = useState("");
-
-  /**
-   * Search text inside the option list
-   */
-  const [optionSearchText, setOptionSearchText] = useState("");
 
   /**
    * Whether prediction request is running
@@ -556,48 +606,143 @@ export default function ChatEstimate() {
   const typingTimerRef = useRef<number | null>(null);
 
   /**
-   * Bottom ref for auto-scroll
+   * Bottom target for scrolling
    */
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   /**
+   * Queue of pending agent messages.
+   *
+   * Why do we need a queue?
+   * Because with typewriter animation, if we start a new agent message
+   * before the previous one has finished typing, the old one gets cut off.
+   *
+   * The queue guarantees:
+   * - messages are typed one by one
+   * - no truncated first prompt
+   * - no duplicated / interrupted prompt sequence
+   */
+  const pendingAgentMessagesRef = useRef<string[]>([]);
+
+  /**
+   * Whether an agent message is currently animating.
+   */
+  const isAnimatingRef = useRef(false);
+
+  /**
+   * Guard against React StrictMode double-running the first effect in development.
+   *
+   * Without this, the initial boot flow may run twice,
+   * which causes the first prompt to appear partially, then restart.
+   */
+  const hasBootedRef = useRef(false);
+
+  /**
    * Current step object
    */
-  const currentStep = currentStepIndex < STEPS.length ? STEPS[currentStepIndex] : null;
+  const currentStep =
+    currentStepIndex < STEPS.length ? STEPS[currentStepIndex] : null;
 
   /**
-   * Current step options
-   * These are already context-filtered by backend.
-   */
-  const currentStepOptions =
-    currentStep && currentStep.kind === "option"
-      ? getOptionsForField(currentStep.field, options)
-      : [];
-
-  /**
-   * Apply client-side search on top of backend-filtered options.
-   * This helps usability when there are still many values.
-   */
-  const visibleCurrentStepOptions = useMemo(() => {
-    const search = normalizeText(optionSearchText);
-    if (!search) return currentStepOptions;
-
-    return currentStepOptions.filter((opt) =>
-      normalizeText(opt).includes(search)
-    );
-  }, [currentStepOptions, optionSearchText]);
-
-  /**
-   * Auto-scroll on new messages
+   * Auto-scroll on message changes.
+   * We keep this because you want the chat to feel alive while typing.
    */
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   /**
+   * Fetch filtered options for a given profile context.
+   *
+   * This asks the backend:
+   * "Given what the user has already entered,
+   * what are the filtered candidate options now?"
+   */
+  async function fetchOptionsForProfile(
+    targetProfile: Profile
+  ): Promise<OptionsResponse | null> {
+    try {
+      const query = buildOptionsQuery(targetProfile);
+      const url = query ? `${API_BASE}/options?${query}` : `${API_BASE}/options`;
+
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error("Options request failed");
+      }
+
+      const json: OptionsResponse = await res.json();
+      return json;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Start typing the next queued agent message.
+   *
+   * If no queued message exists, stop.
+   */
+  function playNextAgentMessage() {
+    // If already animating, do nothing.
+    if (isAnimatingRef.current) return;
+
+    const nextText = pendingAgentMessagesRef.current.shift();
+    if (!nextText) return;
+
+    isAnimatingRef.current = true;
+
+    let agentIndex = -1;
+
+    // Insert a new empty agent bubble
+    setMessages((prev) => {
+      agentIndex = prev.length;
+      return [...prev, { role: "agent", text: "" }];
+    });
+
+    let i = 0;
+
+    typingTimerRef.current = window.setInterval(() => {
+      i++;
+
+      setMessages((prev) => {
+        if (agentIndex < 0 || agentIndex >= prev.length) return prev;
+
+        const next = [...prev];
+        next[agentIndex] = {
+          ...next[agentIndex],
+          text: nextText.slice(0, i),
+        };
+        return next;
+      });
+
+      if (i >= nextText.length && typingTimerRef.current !== null) {
+        window.clearInterval(typingTimerRef.current);
+        typingTimerRef.current = null;
+        isAnimatingRef.current = false;
+
+        // Automatically continue to the next queued agent message
+        playNextAgentMessage();
+      }
+    }, 10);
+  }
+
+  /**
+   * Queue one full agent message.
+   *
+   * This is the ONLY way we should create agent outputs now.
+   * It prevents truncation and duplicate-start issues.
+   */
+  function queueAgentMessage(text: string) {
+    pendingAgentMessagesRef.current.push(text);
+    playNextAgentMessage();
+  }
+
+  /**
    * Initial boot:
-   * - health
-   * - first option load
+   * - fetch backend health
+   * - do NOT prefill REPORT_YEAR into the visible profile
+   * - fetch first-step options using the empty profile
+   * - start the first chat prompt
    */
   useEffect(() => {
     async function boot() {
@@ -609,97 +754,27 @@ export default function ChatEstimate() {
         setHealthInfo(healthJson);
         setBackendOk(true);
 
-        // Set default report year from backend metadata
-        setProfile((prev) => ({
-          ...prev,
-          REPORT_YEAR: healthJson.default_report_year,
-        }));
+        // IMPORTANT:
+        // We no longer prefill REPORT_YEAR into the visible profile.
+        // The user can enter REPORT_YEAR manually later if they want.
+        const initialProfile: Profile = { ...emptyProfile };
+        setProfile(initialProfile);
+
+        const initialOptions = await fetchOptionsForProfile(initialProfile);
+        setOptions(initialOptions);
+
+        queueAgentMessage(buildStepPromptMessage(STEPS[0], initialOptions));
       } catch (error) {
         setBackendOk(false);
       }
     }
 
+    // Prevent duplicate boot in React StrictMode development mode
+    if (hasBootedRef.current) return;
+    hasBootedRef.current = true;
+
     boot();
   }, []);
-
-  /**
-   * Whenever profile changes, re-request filtered options.
-   * This is the main v3 filtering improvement.
-   */
-  useEffect(() => {
-    async function loadFilteredOptions() {
-      try {
-        const query = buildOptionsQuery(profile);
-        const url = query ? `${API_BASE}/options?${query}` : `${API_BASE}/options`;
-
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Options request failed");
-
-        const json: OptionsResponse = await res.json();
-        setOptions(json);
-      } catch (error) {
-        // Keep previous options if request fails
-      }
-    }
-
-    if (backendOk) {
-      loadFilteredOptions();
-    }
-  }, [profile, backendOk]);
-
-  /**
-   * Whenever step changes, show guidance for the new step
-   */
-  useEffect(() => {
-    if (!currentStep) return;
-
-    animateOutput(
-      `${currentStep.prompt}\n\n` +
-        `Hint: ${currentStep.helpText}` +
-        (!currentStep.required ? `\n\nYou can also type: skip` : "")
-    );
-
-    setSelectedOption("");
-    setOptionSearchText("");
-  }, [currentStepIndex]);
-
-  /**
-   * Typewriter animation
-   */
-  function animateOutput(fullText: string) {
-    if (typingTimerRef.current !== null) {
-      window.clearInterval(typingTimerRef.current);
-      typingTimerRef.current = null;
-    }
-
-    let agentIndex = -1;
-
-    setMessages((prev) => {
-      agentIndex = prev.length;
-      return [...prev, { role: "agent", text: "" }];
-    });
-
-    let i = 0;
-    typingTimerRef.current = window.setInterval(() => {
-      i++;
-
-      setMessages((prev) => {
-        if (agentIndex < 0 || agentIndex >= prev.length) return prev;
-
-        const next = [...prev];
-        next[agentIndex] = {
-          ...next[agentIndex],
-          text: fullText.slice(0, i),
-        };
-        return next;
-      });
-
-      if (i >= fullText.length && typingTimerRef.current !== null) {
-        window.clearInterval(typingTimerRef.current);
-        typingTimerRef.current = null;
-      }
-    }, 10);
-  }
 
   /**
    * Call backend /predict
@@ -740,7 +815,7 @@ export default function ChatEstimate() {
       const data: PredictResult = await res.json();
       setResult(data);
 
-      animateOutput(
+      queueAgentMessage(
         `Done. I estimated the assessed land value at ${formatCurrency(
           data.point_estimate
         )}.\n\n` +
@@ -752,33 +827,43 @@ export default function ChatEstimate() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unknown prediction error";
-      animateOutput(`Prediction failed: ${message}`);
+      queueAgentMessage(`Prediction failed: ${message}`);
     } finally {
       setIsPredicting(false);
     }
   }
 
   /**
-   * Process one user message
+   * Process one user message.
+   *
+   * Flow:
+   * 1. Show the user bubble
+   * 2. Handle reset / estimate
+   * 3. Validate input for current step
+   * 4. Save value into profile
+   * 5. Fetch filtered options for the next step
+   * 6. Queue the next prompt into the chat
    */
   async function processUserMessage(rawValue: string) {
     const raw = rawValue.trim();
     if (!raw) return;
 
-    // Show user message in chat first
+    // Show user bubble first
     setMessages((prev) => [...prev, { role: "user", text: raw }]);
 
     // reset command
     if (/^reset$/i.test(raw)) {
-      const defaultYear = healthInfo?.default_report_year ?? "";
-      setProfile({
-        ...emptyProfile,
-        REPORT_YEAR: defaultYear,
-      });
+      const resetProfile: Profile = { ...emptyProfile };
+
+      setProfile(resetProfile);
       setResult(null);
       setCurrentStepIndex(0);
 
-      animateOutput("All fields have been cleared. Let's start again.");
+      const resetOptions = await fetchOptionsForProfile(resetProfile);
+      setOptions(resetOptions);
+
+      queueAgentMessage("All fields have been cleared. Let's start again.");
+      queueAgentMessage(buildStepPromptMessage(STEPS[0], resetOptions));
       return;
     }
 
@@ -787,7 +872,7 @@ export default function ChatEstimate() {
       const missing = getMissingFields(profile);
 
       if (missing.length > 0) {
-        animateOutput(
+        queueAgentMessage(
           "I’m not ready to estimate yet. I still need:\n- " +
             missing.join("\n- ")
         );
@@ -798,16 +883,16 @@ export default function ChatEstimate() {
       return;
     }
 
-    // If all steps completed already
+    // all steps already completed
     if (!currentStep) {
-      animateOutput(
+      queueAgentMessage(
         "All steps have already been completed.\n\n" +
           "Type `estimate` to run prediction, or `reset` to start over."
       );
       return;
     }
 
-    // Validate current step
+    // validate current step
     const validation = validateStepInput(
       currentStep,
       raw,
@@ -818,38 +903,47 @@ export default function ChatEstimate() {
     );
 
     if (!validation.ok) {
-      animateOutput(validation.message);
+      queueAgentMessage(validation.message);
       return;
     }
 
-    // Update profile
+    // save current value
     const nextProfile: Profile = {
       ...profile,
       [currentStep.field]: validation.value as never,
     };
+
     setProfile(nextProfile);
+    setResult(null);
 
     const savedValue =
       validation.value === "" ? "Skipped" : String(validation.value);
 
-    const reply =
-      `Saved ${currentStep.label} = ${savedValue}` +
-      (currentStepIndex < STEPS.length - 1
-        ? "\n\nMoving to the next step."
-        : "\n\nAll steps are complete. Type `estimate` when you are ready.");
+    queueAgentMessage(`Saved ${currentStep.label} = ${savedValue}`);
 
-    animateOutput(reply);
-
-    // Move forward
+    // move to next step
     if (currentStepIndex < STEPS.length - 1) {
-      setCurrentStepIndex((prev) => prev + 1);
+      const nextStepIndex = currentStepIndex + 1;
+      const nextOptions = await fetchOptionsForProfile(nextProfile);
+
+      setOptions(nextOptions);
+      setCurrentStepIndex(nextStepIndex);
+
+      queueAgentMessage(buildStepPromptMessage(STEPS[nextStepIndex], nextOptions));
     } else {
+      // all steps completed
+      const finalOptions = await fetchOptionsForProfile(nextProfile);
+      setOptions(finalOptions);
       setCurrentStepIndex(STEPS.length);
+
+      queueAgentMessage(
+        "All steps are complete. Type `estimate` when you are ready."
+      );
     }
   }
 
   /**
-   * Send from text input
+   * Send from the chat input box.
    */
   async function handleSend() {
     const raw = input.trim();
@@ -857,16 +951,6 @@ export default function ChatEstimate() {
 
     setInput("");
     await processUserMessage(raw);
-  }
-
-  /**
-   * Use selected dropdown option
-   */
-  async function handleUseSelectedOption() {
-    if (!selectedOption) return;
-
-    await processUserMessage(selectedOption);
-    setSelectedOption("");
   }
 
   return (
@@ -893,24 +977,22 @@ export default function ChatEstimate() {
           </span>
         </div>
 
-        <div className="text-xs text-slate-500">
-          API: {API_BASE}
-        </div>
+        <div className="text-xs text-slate-500">API: {API_BASE}</div>
       </div>
 
       {/* Two-column Layout */}
       <div className="grid gap-6 lg:grid-cols-[1.25fr_0.95fr]">
-        {/* Left: Guided Chat */}
+        {/* Left: Chat only */}
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           {/* Chat Header */}
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="text-sm font-semibold">Conversation</div>
             <div className="text-xs text-slate-500">
-              To improve stability, this page collects one field at a time.
+              The chat stays simple. Suggested filtered choices are provided directly inside the conversation.
             </div>
           </div>
 
-          {/* Step Banner */}
+          {/* Current Step Banner */}
           <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
             {currentStep ? (
               <div className="space-y-1">
@@ -922,13 +1004,6 @@ export default function ChatEstimate() {
                     </span>
                   )}
                 </div>
-                <div className="text-xs text-slate-500">{currentStep.helpText}</div>
-
-                {options && currentStep.kind === "option" && (
-                  <div className="text-xs text-slate-500">
-                    Filtered candidate rows: {options.context_row_count}
-                  </div>
-                )}
               </div>
             ) : (
               <div className="text-sm text-slate-700">
@@ -939,7 +1014,7 @@ export default function ChatEstimate() {
           </div>
 
           {/* Messages Area */}
-          <div className="h-[460px] overflow-y-auto overflow-x-hidden bg-slate-50 px-4 py-4">
+          <div className="h-[520px] overflow-y-auto overflow-x-hidden bg-slate-50 px-4 py-4">
             <div className="flex flex-col gap-3">
               {messages.map((m, idx) => (
                 <div
@@ -959,61 +1034,13 @@ export default function ChatEstimate() {
             </div>
           </div>
 
-          {/* Input Area */}
-          <div className="border-t border-slate-200 p-3 space-y-3">
-            {/* Context-aware dropdown for option fields */}
-            {currentStep && currentStep.kind === "option" && currentStepOptions.length > 0 && (
-              <div className="space-y-2">
-                <label className="block text-xs font-medium text-slate-600">
-                  Filtered options for {currentStep.label}
-                </label>
-
-                {/* Search box for options */}
-                <input
-                  value={optionSearchText}
-                  onChange={(e) => setOptionSearchText(e.target.value)}
-                  placeholder={`Search ${currentStep.label} options...`}
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
-                />
-
-                <div className="text-xs text-slate-500">
-                  Showing {visibleCurrentStepOptions.length} option(s)
-                  {optionSearchText ? " after search filtering" : ""}
-                </div>
-
-                <div className="flex gap-2">
-                  <select
-                    value={selectedOption}
-                    onChange={(e) => setSelectedOption(e.target.value)}
-                    className="h-11 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
-                  >
-                    <option value="">Select an option...</option>
-                    {visibleCurrentStepOptions.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    onClick={handleUseSelectedOption}
-                    disabled={!selectedOption}
-                    className="h-11 shrink-0 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Use Selected
-                  </button>
-                </div>
-              </div>
-            )}
-
+          {/* Chat Input */}
+          <div className="border-t border-slate-200 p-3 space-y-2">
             <div className="text-xs text-slate-500">
-              {currentStep
-                ? `You can type the value for ${currentStep.label}${
-                    currentStep.kind === "option"
-                      ? ", or use the filtered dropdown above."
-                      : "."
-                  }`
-                : "Type estimate to run prediction, or reset to clear everything."}
+              Useful commands:{" "}
+              <span className="font-medium">estimate</span>,{" "}
+              <span className="font-medium">reset</span>,{" "}
+              <span className="font-medium">skip</span> (for optional steps).
             </div>
 
             <div className="flex items-center gap-2">
@@ -1064,21 +1091,6 @@ export default function ChatEstimate() {
                 </div>
               ))}
             </div>
-
-            <div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-              <div className="font-medium">Missing required fields</div>
-              <div className="mt-1">
-                {getMissingFields(profile).length === 0
-                  ? "None. Ready to estimate."
-                  : getMissingFields(profile).join(", ")}
-              </div>
-            </div>
-
-            {healthInfo && (
-              <div className="mt-3 text-xs text-slate-500">
-                Supported report years: {healthInfo.min_report_year} - {healthInfo.max_report_year}
-              </div>
-            )}
           </div>
 
           {/* Estimated Result */}
