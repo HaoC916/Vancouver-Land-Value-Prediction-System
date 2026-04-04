@@ -40,10 +40,16 @@ The demo uses the same trained model as the final pipeline (no separate model lo
   - derived fields (for example `POSTAL_FSA`, property age, improvement flags)
   - lookup values from the merged model table (`data/processed/model_table.parquet`)
 - runs the trained model and returns prediction plus an estimated uncertainty range
+- intentionally limits `REPORT_YEAR` to a near-range window (`2024`–`2027`) to avoid misleading long-horizon outputs
+- normalizes postal codes internally (uppercase, remove spaces) before validation and inference
+- validates basic Canadian postal-code format (`A1A1A1` pattern)
 
 ### Important note
 - The demo predicts **land assessment value (`CURRENT_LAND_VALUE`)**
-- It is **not** a guaranteed market sale price
+- It is **not** a guaranteed market sale price or a long-term market-forecasting tool
+- Near-range years are enforced because macro and local-history lookup features are only supported near the observed data horizon
+- Invalid-format postal codes are rejected in the UI.
+- Valid-format postal codes not seen in training are still estimated, but shown with a lower-confidence warning.
 
 ### Run the web demo
 ```bash
@@ -59,6 +65,12 @@ https://drive.google.com/file/d/1ENhMgJCcVpjG5r3AhCcJd4pXKMpqBuBP/view?usp=shari
 - Prediction target: `CURRENT_LAND_VALUE`
 - Train split: `REPORT_YEAR < 2024`
 - Test split: `REPORT_YEAR >= 2024`
+- Official final model (`src/models/train_model.py`) uses **train-only target encoding** on:
+  - `PROPERTY_POSTAL_CODE`
+  - `NEIGHBOURHOOD_CODE`
+  - `LEGAL_TYPE`
+- Default encoding behavior is Mode B:
+  - replace raw high-cardinality versions of those 3 fields with encoded numeric versions
 - Metrics:
   - RMSE
   - MAE
@@ -101,6 +113,10 @@ https://drive.google.com/file/d/1ENhMgJCcVpjG5r3AhCcJd4pXKMpqBuBP/view?usp=shari
 - Final table summary:
   - `reports/figures/model_table_summary.csv`
 
+Postal-code normalization note:
+- `PROPERTY_POSTAL_CODE` is normalized internally to **uppercase with no spaces** (for example, `V6H 2J4` and `V6H2J4` are treated the same).
+- This avoids inconsistent predictions caused by formatting differences.
+
 The final merged table includes:
 - property-level derived features
 - lag/yoy macro features
@@ -118,6 +134,7 @@ Plain-language takeaway:
 - property location/structure features dominate
 - local historical context helps
 - broad yearly macro signals contribute less
+- smarter encoding of high-cardinality location/type fields gives a meaningful accuracy gain
 
 ## Plain-Language Description of Key Features
 | Feature | Plain-language meaning | Why it may matter | Source dataset |
@@ -147,6 +164,28 @@ Plain-language takeaway:
 ![Model Neighbourhood Difficulty](reports/figures/model_neighbourhood_difficulty_public.png)
 ![Model Feature Importance Top20](reports/figures/model_feature_importance_top20.png)
 
+## What Changed from the Earlier Model?
+Earlier model:
+- used the same split/target protocol but treated all categorical features with standard encoding only
+- handled very high-cardinality fields (`PROPERTY_POSTAL_CODE`, `NEIGHBOURHOOD_CODE`, `LEGAL_TYPE`) more naively
+- produced weaker error metrics
+
+Current official model:
+- keeps the same reproducible pipeline and evaluation protocol
+- uses **train-only target encoding** (on `log1p(CURRENT_LAND_VALUE)`) for the 3 highest-impact high-cardinality categorical features
+- defaults to Mode B, which uses encoded numeric versions instead of raw high-cardinality categorical versions in the model input
+- improves RMSE, MAE, Median APE, and robust errors
+
+| Model | RMSE | MAE | Median APE | Robust RMSE | Robust MAE |
+|---|---:|---:|---:|---:|---:|
+| Earlier model | 9,998,813.17 | 691,434.48 | 0.1818 | 1,657,883.65 | 489,160.08 |
+| Current encoded model | 9,577,667.34 | 590,037.32 | 0.1389 | 1,414,066.15 | 396,533.43 |
+
+## Why Accuracy Improved
+The strongest signals in this project are fine-grained location and property-type fields. These fields have many distinct categories, so simple categorical handling leaves useful structure on the table.
+
+Train-only target encoding gives the model a cleaner numeric summary of how each category behaved in historical training data, while still avoiding leakage from the test period. In practice, this helped more than adding extra coarse yearly macro indicators.
+
 ## Demo Web App
 The project includes a local Streamlit demo at `app.py`.
 
@@ -156,14 +195,17 @@ The project includes a local Streamlit demo at `app.py`.
 
 App notes:
 - The app predicts assessed land value, not guaranteed market sale price.
+- The app is designed for near-range estimation only (`REPORT_YEAR` is limited to `2024`–`2027`).
+- This limit prevents misleading far-future predictions when lookup-based features are unavailable beyond the observed horizon.
 - Some internal model features are filled using derived fields and lookup values from `data/processed/model_table.parquet`.
 - The app returns a point estimate and an estimated range.  
   The range uses neighbourhood-level typical error when available; otherwise it falls back to global model error.
 
 ## Current Finding
+- The encoded model in `src/models/train_model.py` is now the official final model.
 - Location/structure variables remain the main predictive drivers.
-- Extra coarse macro information adds limited gain.
-- Local historical features are useful, but the consolidated model still does not outperform the strongest property-only benchmark from earlier experiments.
+- Better handling of high-cardinality categorical fields substantially improved performance versus the earlier main model.
+- Extra coarse macro information still adds limited gain compared with strong property-level signals.
 
 ## Setup
 ```bash
@@ -209,7 +251,8 @@ If the artifact is missing, the app will show a message asking you to run traini
 - Do not commit local data artifacts under `data/`.
 
 ## Project Evolution Note
-Earlier experimental entry points were consolidated into this final submission pipeline to reduce maintenance overhead and avoid version confusion.
+Earlier experimental entry points were consolidated into this final submission pipeline to reduce maintenance overhead and avoid version confusion.  
+The previous non-encoded main trainer is retained only as historical reference through documented metrics; the official path is now `python -m src.models.train_model`.
 
 ## License
 MIT (see `LICENSE`).

@@ -14,6 +14,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder
 
 from src.eval.baseline_reports import write_baseline_reports
+from src.eval.encoding_utils import apply_target_encoders, fit_target_encoders
 from src.eval.feature_importance import save_feature_importance
 from src.eval.metrics import compute_metrics, prediction_sanity_stats, scale_warning
 from src.viz.baseline_plots import save_model_plots
@@ -21,6 +22,7 @@ from src.viz.baseline_plots import save_model_plots
 TARGET_COL = "CURRENT_LAND_VALUE"
 REPORT_YEAR_COL = "REPORT_YEAR"
 ID_EXCLUDE_COLS = {"PID"}
+HIGH_CARD_COLS = ["PROPERTY_POSTAL_CODE", "NEIGHBOURHOOD_CODE", "LEGAL_TYPE"]
 
 
 def _choose_model():
@@ -77,15 +79,18 @@ def load_data(path: Path) -> pd.DataFrame:
     return df
 
 
-def infer_feature_columns(df: pd.DataFrame) -> tuple[list[str], list[str], list[str]]:
+def infer_feature_columns(df: pd.DataFrame) -> list[str]:
     excluded = {TARGET_COL, REPORT_YEAR_COL}.union(ID_EXCLUDE_COLS.intersection(df.columns))
     feature_cols = [c for c in df.columns if c not in excluded]
     if not feature_cols:
         raise ValueError("No usable feature columns after exclusions.")
+    return feature_cols
 
-    numeric_cols = [c for c in feature_cols if pd.api.types.is_numeric_dtype(df[c])]
-    cat_cols = [c for c in feature_cols if c not in numeric_cols]
-    return feature_cols, cat_cols, numeric_cols
+
+def infer_types(df: pd.DataFrame) -> tuple[list[str], list[str]]:
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    cat_cols = [c for c in df.columns if c not in numeric_cols]
+    return cat_cols, numeric_cols
 
 
 def build_pipeline(cat_cols: list[str], numeric_cols: list[str], model) -> Pipeline:
@@ -116,15 +121,56 @@ def build_pipeline(cat_cols: list[str], numeric_cols: list[str], model) -> Pipel
     return Pipeline(steps=[("preprocess", pre), ("model", model)])
 
 
+def _prepare_encoded_features(
+    X_train: pd.DataFrame,
+    X_test: pd.DataFrame,
+    y_train: pd.Series,
+    encoding_mode: str,
+) -> tuple[pd.DataFrame, pd.DataFrame, list[str], dict]:
+    available_high_card = [c for c in HIGH_CARD_COLS if c in X_train.columns]
+    y_train_log = np.log1p(y_train)
+
+    # Train-only target encoding:
+    # mappings are fitted ONLY on train data using log1p target for scale stability.
+    encoders = fit_target_encoders(X_train, y_train_log, available_high_card)
+    X_train_enc = apply_target_encoders(X_train, encoders)
+    X_test_enc = apply_target_encoders(X_test, encoders)
+
+    if encoding_mode == "b":
+        drop_cols = [c for c in available_high_card if c in X_train_enc.columns]
+        X_train_enc = X_train_enc.drop(columns=drop_cols)
+        X_test_enc = X_test_enc.drop(columns=drop_cols)
+
+    encoder_payload = {
+        "enabled": True,
+        "mode": encoding_mode,
+        "target": "log1p_current_land_value",
+        "cols": available_high_card,
+        "encoders": {
+            col: {
+                "mapping": encoders[col].mapping,
+                "global_mean": float(encoders[col].global_mean),
+            }
+            for col in available_high_card
+            if col in encoders
+        },
+    }
+    return X_train_enc, X_test_enc, available_high_card, encoder_payload
+
+
 def train_and_evaluate(
     data_path: Path,
     artifact_path: Path,
     metadata_path: Path,
     sample_frac: float = 1.0,
     save_outputs: bool = True,
+    encoding_mode: str = "b",
 ) -> dict[str, object]:
+    if encoding_mode not in {"a", "b"}:
+        raise ValueError("encoding_mode must be 'a' or 'b'")
+
     df = load_data(data_path)
-    feature_cols, cat_cols, numeric_cols = infer_feature_columns(df)
+    feature_cols = infer_feature_columns(df)
 
     train_df = df[df[REPORT_YEAR_COL] < 2024].copy()
     test_df = df[df[REPORT_YEAR_COL] >= 2024].copy()
@@ -135,13 +181,24 @@ def train_and_evaluate(
         train_df = train_df.sample(frac=sample_frac, random_state=42)
         test_df = test_df.sample(frac=sample_frac, random_state=42)
 
-    X_train = train_df[feature_cols]
-    y_train = train_df[TARGET_COL]
-    X_test = test_df[feature_cols]
-    y_test = test_df[TARGET_COL]
+    X_train_raw = train_df[feature_cols].copy()
+    y_train = train_df[TARGET_COL].copy()
+    X_test_raw = test_df[feature_cols].copy()
+    y_test = test_df[TARGET_COL].copy()
+
+    X_train, X_test, encoded_cols, encoder_payload = _prepare_encoded_features(
+        X_train=X_train_raw,
+        X_test=X_test_raw,
+        y_train=y_train,
+        encoding_mode=encoding_mode,
+    )
+    cat_cols, numeric_cols = infer_types(X_train)
 
     model_backend, model = _choose_model()
     print(f"[train_model] Using model backend: {model_backend}")
+    print(f"[train_model] Target encoding mode: {encoding_mode.upper()}")
+    print(f"[train_model] Target encoded columns: {encoded_cols}")
+    print("[train_model] Target encoding target: log1p(CURRENT_LAND_VALUE)")
 
     pipeline = build_pipeline(cat_cols, numeric_cols, model)
     y_train_log = np.log1p(y_train)
@@ -183,10 +240,12 @@ def train_and_evaluate(
         "robust_cap_p99_5": float(metrics["robust_cap_p99_5"]),
         "n_train": float(len(train_df)),
         "n_test": float(len(test_df)),
-        "n_features_total": float(len(feature_cols)),
+        "n_features_total": float(X_train.shape[1]),
         "n_features_cat": float(len(cat_cols)),
         "n_features_num": float(len(numeric_cols)),
         "model_backend": model_backend,
+        "encoding_mode": encoding_mode,
+        "target_encoding_target": "log1p_current_land_value",
     }
 
     if save_outputs:
@@ -230,25 +289,32 @@ def train_and_evaluate(
 
         bundle = {
             "pipeline": pipeline,
-            "feature_cols": feature_cols,
+            "feature_cols": list(X_train.columns),
             "cat_cols": cat_cols,
             "numeric_cols": numeric_cols,
             "target_col": TARGET_COL,
             "report_year_col": REPORT_YEAR_COL,
             "model_backend": model_backend,
+            "target_encoding": encoder_payload,
         }
         joblib.dump(bundle, artifact_path)
 
         metadata = {
             "target": TARGET_COL,
             "prediction_note": "This model predicts assessed land value (CURRENT_LAND_VALUE), not guaranteed sale price.",
-            "feature_names_used": feature_cols,
-            "n_features_total": len(feature_cols),
+            "feature_names_used": list(X_train.columns),
+            "n_features_total": X_train.shape[1],
             "train_year_rule": "REPORT_YEAR < 2024",
             "test_year_rule": "REPORT_YEAR >= 2024",
             "default_report_year": int(df[REPORT_YEAR_COL].max()),
             "model_backend": model_backend,
             "artifact_path": str(artifact_path),
+            "target_encoding": {
+                "enabled": True,
+                "mode": encoding_mode,
+                "target": "log1p_current_land_value",
+                "columns": encoded_cols,
+            },
         }
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         print(f"[train_model] Saved model artifact: {artifact_path}")
@@ -283,6 +349,16 @@ def main() -> None:
         default="artifacts/model_metadata.json",
         help="Path to save model metadata JSON",
     )
+    parser.add_argument(
+        "--encoding_mode",
+        type=str,
+        default="b",
+        choices=["a", "b"],
+        help=(
+            "Target encoding mode: 'b' (default) replaces high-cardinality raw columns "
+            "with train-only target-encoded columns; 'a' keeps both."
+        ),
+    )
     args = parser.parse_args()
 
     train_and_evaluate(
@@ -291,6 +367,7 @@ def main() -> None:
         metadata_path=Path(args.metadata_path),
         sample_frac=args.sample_frac,
         save_outputs=True,
+        encoding_mode=args.encoding_mode,
     )
 
 

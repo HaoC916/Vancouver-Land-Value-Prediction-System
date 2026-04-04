@@ -75,7 +75,16 @@ def _build_property_features(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]
         out["IMPROVEMENT_RECENCY_BIN"] = out["IMPROVEMENT_RECENCY_BIN"].fillna("unknown")
         created.append("IMPROVEMENT_RECENCY_BIN")
 
-    postal = out[POSTAL_COL].fillna("Unknown").astype(str).str.upper().str.strip()
+    postal = (
+        out[POSTAL_COL]
+        .fillna("Unknown")
+        .astype(str)
+        .str.upper()
+        .str.replace(r"\s+", "", regex=True)
+        .str.strip()
+    )
+    postal = postal.replace({"": "Unknown", "NAN": "Unknown", "NONE": "Unknown", "NAT": "Unknown"})
+    out[POSTAL_COL] = postal
     valid_fsa = postal.str.match(r"^[A-Z]\d[A-Z]")
     out["POSTAL_FSA"] = np.where(valid_fsa, postal.str[:3], "Unknown")
     created.append("POSTAL_FSA")
