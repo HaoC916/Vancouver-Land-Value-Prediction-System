@@ -335,13 +335,7 @@ function buildOptionsQuery(profile: Profile): string {
  *
  * IMPORTANT DESIGN CHOICE:
  * - The chat remains the only interaction area.
- * - We do NOT render any separate dropdown/filter UI block.
  * - Filtered options are injected directly into the chat prompt.
- *
- * Also:
- * - For option steps, we do NOT print a generic "Hint: ..." first
- *   and then another option hint.
- * - We only print ONE clean hint block.
  */
 function buildStepPromptMessage(
   step: Step,
@@ -398,7 +392,6 @@ function buildStepPromptMessage(
  * - categorical fields must match filtered options
  *
  * NOTE:
- * Because REPORT_YEAR is no longer prefilled,
  * when REPORT_YEAR is still empty we use maxReportYear
  * as the upper fallback for related year checks.
  */
@@ -548,15 +541,13 @@ export default function ChatEstimate() {
   /**
    * Chat history.
    *
-   * We KEEP the typewriter animation because that is part of the
-   * immersive conversation feel you want.
    */
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "agent",
       text:
-        "Hi! This page uses a guided chat flow.\n\n" +
-        "The chat remains the main interaction area. For each categorical step, I will show filtered suggested options directly inside the conversation.",
+        "Hi!  I'm Web CRaWLer AI :)\n" +
+        "I'll guide you step by step and show filtered suggestions directly inside the conversation.",
     },
   ]);
 
@@ -612,10 +603,8 @@ export default function ChatEstimate() {
 
   /**
    * Queue of pending agent messages.
-   *
-   * Why do we need a queue?
-   * Because with typewriter animation, if we start a new agent message
-   * before the previous one has finished typing, the old one gets cut off.
+   * to avoid if we start a new agent message the old one gets cut off,
+   * before the previous one has finished typing, 
    *
    * The queue guarantees:
    * - messages are typed one by one
@@ -645,7 +634,6 @@ export default function ChatEstimate() {
 
   /**
    * Auto-scroll on message changes.
-   * We keep this because you want the chat to feel alive while typing.
    */
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -729,8 +717,6 @@ export default function ChatEstimate() {
   /**
    * Queue one full agent message.
    *
-   * This is the ONLY way we should create agent outputs now.
-   * It prevents truncation and duplicate-start issues.
    */
   function queueAgentMessage(text: string) {
     pendingAgentMessagesRef.current.push(text);
@@ -754,9 +740,6 @@ export default function ChatEstimate() {
         setHealthInfo(healthJson);
         setBackendOk(true);
 
-        // IMPORTANT:
-        // We no longer prefill REPORT_YEAR into the visible profile.
-        // The user can enter REPORT_YEAR manually later if they want.
         const initialProfile: Profile = { ...emptyProfile };
         setProfile(initialProfile);
 
@@ -873,7 +856,7 @@ export default function ChatEstimate() {
 
       if (missing.length > 0) {
         queueAgentMessage(
-          "I’m not ready to estimate yet. I still need:\n- " +
+          "I'm not ready to estimate yet. I still need:\n- " +
             missing.join("\n- ")
         );
         return;
@@ -957,11 +940,7 @@ export default function ChatEstimate() {
     <div className="space-y-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Chat Estimate</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Guided conversational UI for land value estimation. The actual
-          prediction logic still runs in Python FastAPI.
-        </p>
+        <h1 className="text-3xl font-semibold tracking-tight">Property Value Copilot</h1>
       </div>
 
       {/* Backend Status */}
@@ -988,7 +967,7 @@ export default function ChatEstimate() {
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="text-sm font-semibold">Conversation</div>
             <div className="text-xs text-slate-500">
-              The chat stays simple. Suggested filtered choices are provided directly inside the conversation.
+              Suggested filtered choices are provided inside the conversation.
             </div>
           </div>
 
@@ -1072,7 +1051,7 @@ export default function ChatEstimate() {
           {/* Current Profile */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4">
-              <h2 className="text-lg font-semibold">Current Property Profile</h2>
+              <h2 className="text-lg font-semibold">Property Profile</h2>
               <p className="mt-1 text-sm text-slate-500">
                 Collected through the guided chat flow.
               </p>
@@ -1098,7 +1077,7 @@ export default function ChatEstimate() {
             <div className="mb-4">
               <h2 className="text-lg font-semibold">Estimated Result</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Returned by the Python prediction API.
+                The estimated assessed land value based on the current profile.
               </p>
             </div>
 

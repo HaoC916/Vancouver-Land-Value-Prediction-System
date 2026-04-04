@@ -40,7 +40,40 @@ export default function App() {
           {/* Left side: logo + title */}
           <div className="flex items-center gap-3">
             {/* Simple logo block */}
-            <div className="h-8 w-8 rounded-xl bg-slate-900" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900">
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                className="text-white"
+              >
+                <path
+                  d="M12 3V6"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+                <rect
+                  x="5"
+                  y="7"
+                  width="14"
+                  height="10"
+                  rx="3"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                />
+                <circle cx="9.5" cy="12" r="1" fill="currentColor" />
+                <circle cx="14.5" cy="12" r="1" fill="currentColor" />
+                <path
+                  d="M9 15.5H15"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
 
             {/* Title + subtitle */}
             <div>
@@ -60,10 +93,10 @@ export default function App() {
               tabClass(page === "agent") decides the active style
             */}
             <button className={tabClass(page === "chat")} onClick={() => setPage("chat")}>
-              Chat Estimate
+              Chat UI
             </button>
             <button className={tabClass(page === "manual")} onClick={() => setPage("manual")}>
-              Manual Estimate
+              Manual UI
             </button>
           </nav>
         </div>
