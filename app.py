@@ -75,11 +75,16 @@ with col_left:
             step=1,
         )
 
+        st.caption(
+            "Near-range estimation only: choose REPORT_YEAR from 2024 to 2027. "
+            "Far-future years are intentionally disabled because lookup features "
+            "are only reliable near the observed data horizon."
+        )
         report_year = st.number_input(
             "REPORT_YEAR (optional)",
-            min_value=2000,
-            max_value=2100,
-            value=int(predictor.default_report_year),
+            min_value=2024,
+            max_value=2027,
+            value=2026,
             step=1,
         )
 
@@ -100,38 +105,50 @@ with col_left:
 with col_right:
     st.subheader("Estimated Result")
     if submit:
-        user_input = {
-            "PROPERTY_POSTAL_CODE": postal_code,
-            "LEGAL_TYPE": legal_type,
-            "ZONING_DISTRICT": zoning_district,
-            "ZONING_CLASSIFICATION": zoning_classification,
-            "NEIGHBOURHOOD_CODE": neighbourhood_code,
-            "YEAR_BUILT": year_built,
-            "BIG_IMPROVEMENT_YEAR": big_improvement_year,
-            "REPORT_YEAR": report_year,
-        }
-        try:
-            result = predictor.predict(user_input)
-            st.metric("Point Estimate (Assessed Land Value)", _fmt_currency(result.point_estimate))
-            st.markdown(
-                f"**Estimated Range:** {_fmt_currency(result.lower_bound)} to {_fmt_currency(result.upper_bound)}"
+        normalized_postal = predictor.normalize_postal_code(postal_code)
+        if not predictor.is_valid_canadian_postal_code(normalized_postal):
+            st.error(
+                "Please enter a valid Canadian postal code (example: V6H2J4 or V6H 2J4)."
             )
-            st.caption(
-                f"Range uses error band: {_fmt_currency(result.error_band)} "
-                f"(source: `{result.error_band_source}`)."
-            )
+        else:
+            if not predictor.is_postal_code_seen(normalized_postal):
+                st.warning(
+                    "This postal code was not seen in the training data. "
+                    "The estimate may be less reliable."
+                )
 
-            st.markdown("### Interpretation")
-            st.write(
-                "This estimate is driven mainly by legal type, postal/location context, zoning, "
-                "and neighbourhood-related signals in the model."
-            )
+            user_input = {
+                "PROPERTY_POSTAL_CODE": normalized_postal,
+                "LEGAL_TYPE": legal_type,
+                "ZONING_DISTRICT": zoning_district,
+                "ZONING_CLASSIFICATION": zoning_classification,
+                "NEIGHBOURHOOD_CODE": neighbourhood_code,
+                "YEAR_BUILT": year_built,
+                "BIG_IMPROVEMENT_YEAR": big_improvement_year,
+                "REPORT_YEAR": report_year,
+            }
+            try:
+                result = predictor.predict(user_input)
+                st.metric("Point Estimate (Assessed Land Value)", _fmt_currency(result.point_estimate))
+                st.markdown(
+                    f"**Estimated Range:** {_fmt_currency(result.lower_bound)} to {_fmt_currency(result.upper_bound)}"
+                )
+                st.caption(
+                    f"Range uses error band: {_fmt_currency(result.error_band)} "
+                    f"(source: `{result.error_band_source}`)."
+                )
 
-            with st.expander("Derived and lookup details"):
-                st.json(result.used_features)
+                st.markdown("### Interpretation")
+                st.write(
+                    "This estimate is driven mainly by legal type, postal/location context, zoning, "
+                    "and neighbourhood-related signals in the model."
+                )
 
-        except Exception as e:
-            st.error(f"Prediction failed: {e}")
+                with st.expander("Derived and lookup details"):
+                    st.json(result.used_features)
+
+            except Exception as e:
+                st.error(f"Prediction failed: {e}")
 
 st.markdown("---")
 st.markdown(
