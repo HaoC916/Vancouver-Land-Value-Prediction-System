@@ -61,6 +61,20 @@ def clean_property_tax(in_path: Path, out_path: Path, summary_path: Path) -> Non
         df.loc[df[col].isin(["", "nan", "None", "NaT"]), col] = np.nan
         df[col] = df[col].fillna("Unknown")
 
+    # Normalize postal codes to a single canonical format:
+    # uppercase + no spaces (e.g., V6H 2J4 -> V6H2J4).
+    df["PROPERTY_POSTAL_CODE"] = (
+        df["PROPERTY_POSTAL_CODE"]
+        .astype(str)
+        .str.upper()
+        .str.replace(r"\s+", "", regex=True)
+        .str.strip()
+    )
+    df.loc[
+        df["PROPERTY_POSTAL_CODE"].isin(["", "NAN", "NONE", "NAT", "UNKNOWN"]),
+        "PROPERTY_POSTAL_CODE",
+    ] = "Unknown"
+
     df["PROPERTY_AGE"] = df["REPORT_YEAR"] - df["YEAR_BUILT"]
     df.loc[df["YEAR_BUILT"].isna(), "PROPERTY_AGE"] = np.nan
 
