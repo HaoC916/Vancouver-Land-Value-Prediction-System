@@ -78,7 +78,7 @@ export default function App() {
             {/* Title + subtitle */}
             <div>
               <div className="text-sm font-semibold tracking-tight">
-                Vancouver Land Value Estimator
+                Property Value Prediction System
               </div>
               <div className="text-xs text-slate-500">
                 Web Application
