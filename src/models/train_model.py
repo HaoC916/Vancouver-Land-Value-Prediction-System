@@ -16,8 +16,10 @@ from sklearn.preprocessing import OrdinalEncoder
 from src.eval.baseline_reports import write_baseline_reports
 from src.eval.encoding_utils import apply_target_encoders, fit_target_encoders
 from src.eval.feature_importance import save_feature_importance
-from src.eval.metrics import compute_metrics, prediction_sanity_stats, scale_warning
+#from src.eval.metrics import compute_metrics, prediction_sanity_stats, scale_warning
 from src.viz.baseline_plots import save_model_plots
+from src.eval.metrics import compute_metrics, prediction_sanity_stats, scale_warning, legal_type_summary
+
 
 TARGET_COL = "CURRENT_LAND_VALUE"
 REPORT_YEAR_COL = "REPORT_YEAR"
@@ -264,6 +266,23 @@ def train_and_evaluate(
             report_df,
             figures_dir / "model_neighbourhood_error.csv",
         )
+
+        # ------------------------------------------------------------
+        # Additional evaluation:
+        # compare prediction error across LEGAL_TYPE groups
+        # (for example: LAND vs STRATA)
+        # ------------------------------------------------------------
+        if "LEGAL_TYPE" in report_df.columns:
+            legal_summary_df = legal_type_summary(
+                y_true=y_test,
+                y_pred=y_pred,
+                legal_type=report_df["LEGAL_TYPE"],
+            )
+            legal_summary_df.to_csv(
+                figures_dir / "model_legal_type_error.csv",
+                index=False,
+            )
+            
         save_model_plots(
             y_test,
             y_pred,

@@ -88,3 +88,48 @@ def neighbourhood_summary(y_true, y_pred, neighbourhood_code):
         .reset_index()
     )
     return summary
+
+def legal_type_summary(y_true, y_pred, legal_type):
+    """
+    Summarize prediction error by LEGAL_TYPE.
+
+    This helps us compare whether STRATA properties
+    are harder to predict than LAND properties.
+
+    Added metrics:
+    - median_abs_error: more robust than mean_abs_error
+    - p90_ape: shows how bad the upper-tail relative error is
+    """
+    df = pd.DataFrame(
+        {
+            "LEGAL_TYPE": legal_type,
+            "y_true": y_true,
+            "y_pred": y_pred,
+        }
+    )
+
+    # Absolute error
+    df["abs_error"] = (df["y_pred"] - df["y_true"]).abs()
+
+    # Squared error, used to compute RMSE
+    df["sq_error"] = (df["y_pred"] - df["y_true"]) ** 2
+
+    # Absolute percentage error (APE)
+    # Only defined when y_true > 0
+    mask = df["y_true"] > 0
+    df["ape"] = np.where(mask, df["abs_error"] / df["y_true"], np.nan)
+
+    summary = (
+        df.groupby("LEGAL_TYPE", dropna=False)
+        .agg(
+            count=("y_true", "size"),
+            mean_abs_error=("abs_error", "mean"),
+            median_abs_error=("abs_error", "median"),
+            rmse=("sq_error", lambda x: np.sqrt(np.mean(x))),
+            median_ape=("ape", "median"),
+            p90_ape=("ape", lambda x: np.nanpercentile(x, 90)),
+        )
+        .reset_index()
+    )
+
+    return summary
