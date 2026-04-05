@@ -940,7 +940,7 @@ export default function ChatEstimate() {
     <div className="space-y-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Property Value Copilot</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Precise Mode</h1>
       </div>
 
       {/* Backend Status */}
@@ -965,10 +965,7 @@ export default function ChatEstimate() {
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           {/* Chat Header */}
           <div className="border-b border-slate-200 px-4 py-3">
-            <div className="text-sm font-semibold">Conversation</div>
-            <div className="text-xs text-slate-500">
-              Suggested filtered choices are provided inside the conversation.
-            </div>
+            <div className="text-sm font-semibold">Chat Window</div>
           </div>
 
           {/* Current Step Banner */}
@@ -1052,9 +1049,6 @@ export default function ChatEstimate() {
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4">
               <h2 className="text-lg font-semibold">Property Profile</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Collected through the guided chat flow.
-              </p>
             </div>
 
             <div className="space-y-3 text-sm">
@@ -1076,9 +1070,6 @@ export default function ChatEstimate() {
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4">
               <h2 className="text-lg font-semibold">Estimated Result</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                The estimated assessed land value based on the current profile.
-              </p>
             </div>
 
             {isPredicting ? (
@@ -1127,7 +1118,7 @@ export default function ChatEstimate() {
               </div>
             ) : (
               <div className="text-sm text-slate-600">
-                No prediction yet. Complete the guided steps, then type{" "}
+                No prediction yet. <br/> Complete the guided steps, then type{" "}
                 <span className="font-medium">estimate</span>.
               </div>
             )}

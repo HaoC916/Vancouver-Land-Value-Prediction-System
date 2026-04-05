@@ -1,15 +1,13 @@
 import { useState } from "react";
-// Import the three "pages" (components).
-import ChatEstimate from "./pages/ChatEstimate";
-import ManualEstimate from "./pages/ManualEstimate";
+// Import "pages" (components).
+import PreciseMode from "./pages/PreciseMode";
+import FuzzyMode from "./pages/FuzzyMode";
 
-// A TypeScript union type: page can only be one of these three strings.
-// This prevents typos like "agnet" from compiling.
-type Page = "chat" | "manual";
+type Page = "precise" | "fuzzy";
 
 export default function App() {
   // React state: which page is currently selected.
-  const [page, setPage] = useState<Page>("chat");
+  const [page, setPage] = useState<Page>("precise");
 
   // Helper function that returns a Tailwind class string for tabs.
   // If active === true, we use a dark "selected" style.
@@ -92,11 +90,11 @@ export default function App() {
               On click -> setPage("agent")
               tabClass(page === "agent") decides the active style
             */}
-            <button className={tabClass(page === "chat")} onClick={() => setPage("chat")}>
-              Chat UI
+            <button className={tabClass(page === "precise")} onClick={() => setPage("precise")}>
+              Precise Mode
             </button>
-            <button className={tabClass(page === "manual")} onClick={() => setPage("manual")}>
-              Manual UI
+            <button className={tabClass(page === "fuzzy")} onClick={() => setPage("fuzzy")}>
+              Fuzzy Mode
             </button>
           </nav>
         </div>
@@ -104,8 +102,8 @@ export default function App() {
 
       {/* Main Content */}
       <main className="mx-auto w-full max-w-6xl px-6 py-8">
-        {page === "chat" && <ChatEstimate />}
-        {page === "manual" && <ManualEstimate />}
+        {page === "precise" && <PreciseMode />}
+        {page === "fuzzy" && <FuzzyMode />}
       </main>
     </div>
   );
