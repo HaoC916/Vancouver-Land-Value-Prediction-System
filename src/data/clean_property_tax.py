@@ -17,6 +17,8 @@ KEEP_COLS = [
     "YEAR_BUILT",
     "BIG_IMPROVEMENT_YEAR",
     "LAND_COORDINATE",
+    "PLAN",
+    "LOT",
 ]
 
 CAT_COLS = [
@@ -25,6 +27,8 @@ CAT_COLS = [
     "ZONING_CLASSIFICATION",
     "NEIGHBOURHOOD_CODE",
     "PROPERTY_POSTAL_CODE",
+    "PLAN",
+    "LOT",
 ]
 
 KEY_MISSING_COLS = [
@@ -33,12 +37,21 @@ KEY_MISSING_COLS = [
     "BIG_IMPROVEMENT_YEAR",
     "LAND_COORDINATE",
     "PROPERTY_POSTAL_CODE",
+    "PLAN",
+    "LOT",
 ]
 
 
 def clean_property_tax(in_path: Path, out_path: Path, summary_path: Path) -> None:
     df = pd.read_csv(in_path, sep=";", low_memory=False)
     total_rows_before = len(df)
+
+    # Safety check: make sure all expected columns exist
+    missing_keep_cols = [col for col in KEEP_COLS if col not in df.columns]
+    if missing_keep_cols:
+        raise ValueError(
+            f"Raw property-tax file is missing required columns: {missing_keep_cols}"
+        )
 
     df = df[KEEP_COLS].copy()
 
@@ -74,6 +87,24 @@ def clean_property_tax(in_path: Path, out_path: Path, summary_path: Path) -> Non
         df["PROPERTY_POSTAL_CODE"].isin(["", "NAN", "NONE", "NAT", "UNKNOWN"]),
         "PROPERTY_POSTAL_CODE",
     ] = "Unknown"
+
+    # Normalize PLAN and LOT 
+    # for STRATA-oriented grouping / feature engineering
+    df["PLAN"] = (
+        df["PLAN"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+    df.loc[df["PLAN"].isin(["", "NAN", "NONE", "NAT", "UNKNOWN"]), "PLAN"] = "Unknown"
+
+    df["LOT"] = (
+        df["LOT"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+    df.loc[df["LOT"].isin(["", "NAN", "NONE", "NAT", "UNKNOWN"]), "LOT"] = "Unknown"
 
     df["PROPERTY_AGE"] = df["REPORT_YEAR"] - df["YEAR_BUILT"]
     df.loc[df["YEAR_BUILT"].isna(), "PROPERTY_AGE"] = np.nan
@@ -114,6 +145,42 @@ def clean_property_tax(in_path: Path, out_path: Path, summary_path: Path) -> Non
                 "section": "count_by_neighbourhood_code_top20",
                 "metric": str(neigh),
                 "value": int(count),
+            }
+        )
+
+    # PLAN coverage
+    plan_counts = df["PLAN"].value_counts(dropna=False).head(20)
+    for plan, count in plan_counts.items():
+        summary_rows.append(
+            {
+                "section": "count_by_plan_top20",
+                "metric": str(plan),
+                "value": int(count),
+            }
+        )
+    
+    # STRATA-specific coverage for PLAN and LOT
+    strata_df = df[df["LEGAL_TYPE"].astype(str).str.upper() == "STRATA"].copy()
+    if not strata_df.empty:
+        summary_rows.append(
+            {
+                "section": "strata_plan_lot_profile",
+                "metric": "strata_rows",
+                "value": int(len(strata_df)),
+            }
+        )
+        summary_rows.append(
+            {
+                "section": "strata_plan_lot_profile",
+                "metric": "strata_unique_plan",
+                "value": int(strata_df["PLAN"].nunique(dropna=True)),
+            }
+        )
+        summary_rows.append(
+            {
+                "section": "strata_plan_lot_profile",
+                "metric": "strata_unique_lot",
+                "value": int(strata_df["LOT"].nunique(dropna=True)),
             }
         )
 

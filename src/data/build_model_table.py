@@ -11,6 +11,7 @@ TARGET_COL = "CURRENT_LAND_VALUE"
 YEAR_COL = "REPORT_YEAR"
 NEIGH_COL = "NEIGHBOURHOOD_CODE"
 POSTAL_COL = "PROPERTY_POSTAL_CODE"
+PLAN_COL = "PLAN"
 
 
 def _append_summary(summary_rows: list[dict[str, object]], section: str, metric: str, value: object) -> None:
@@ -88,6 +89,17 @@ def _build_property_features(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]
     valid_fsa = postal.str.match(r"^[A-Z]\d[A-Z]")
     out["POSTAL_FSA"] = np.where(valid_fsa, postal.str[:3], "Unknown")
     created.append("POSTAL_FSA")
+
+    # Normalize PLAN so later PLAN-level history features are stable.
+    if PLAN_COL in out.columns:
+        out[PLAN_COL] = (
+            out[PLAN_COL]
+            .fillna("Unknown")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+            .replace("", "Unknown")
+        )
 
     if "LEGAL_TYPE" in out.columns and "ZONING_CLASSIFICATION" in out.columns:
         legal = out["LEGAL_TYPE"].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
@@ -311,6 +323,34 @@ def build_model_table(
     fact = fact.merge(fsa_hist[fsa_keep], on=[YEAR_COL, "POSTAL_FSA"], how="left")
     for c in fsa_keep[2:]:
         _append_summary(summary_rows, "engineered_group_feature", c, "created")
+    
+    # --------------------------------------------------------
+    # New: PLAN-level history features
+    #
+    # For STRATA properties, PLAN is much closer to a building /
+    # strata scheme context than neighbourhood or FSA alone.
+    # --------------------------------------------------------
+    plan_hist, plan_cols_full = _compute_group_history(
+        fact,
+        PLAN_COL,
+        "plan",
+        include_extended=False,
+    )
+
+    plan_cols_keep = [
+        "plan_prev_year_median_land_value",
+        "plan_prev_year_mean_land_value",
+        "plan_prev_year_property_count",
+        "plan_prev_2yr_median_land_value",
+        "plan_prev_3yr_rolling_median_land_value",
+        "plan_prev_3yr_growth_trend",
+    ]
+
+    plan_keep = [YEAR_COL, PLAN_COL] + [c for c in plan_cols_keep if c in plan_cols_full]
+    fact = fact.merge(plan_hist[plan_keep], on=[YEAR_COL, PLAN_COL], how="left")
+
+    for c in plan_keep[2:]:
+        _append_summary(summary_rows, "engineered_group_feature", c, "created")
 
     fact, census_status = _merge_census_if_robust(fact, census_path, merge_census)
     _append_summary(summary_rows, "source_status", "census_profile", census_status)
@@ -330,7 +370,8 @@ def build_model_table(
     _append_summary(summary_rows, "table", "new_columns", ",".join(new_cols))
     _append_summary(summary_rows, "table", "year_coverage", f"{years[0]}-{years[-1]}" if years else "none")
     _append_summary(summary_rows, "table", "sample_years_present", ",".join(map(str, years)))
-    _append_summary(summary_rows, "table", "group_feature_families", "neigh_history,fsa_history")
+    #_append_summary(summary_rows, "table", "group_feature_families", "neigh_history,fsa_history")
+    _append_summary(summary_rows, "table", "group_feature_families", "neigh_history,fsa_history,plan_history")
 
     for c in new_cols:
         _append_summary(summary_rows, "missing_rate", c, float(fact[c].isna().mean()))

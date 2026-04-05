@@ -6,6 +6,8 @@ missing_rate,YEAR_BUILT,0.028582
 missing_rate,BIG_IMPROVEMENT_YEAR,0.028591
 missing_rate,LAND_COORDINATE,0.0
 missing_rate,PROPERTY_POSTAL_CODE,0.0
+missing_rate,PLAN,0.0
+missing_rate,LOT,0.0
 count_by_report_year,2020,212446.0
 count_by_report_year,2021,213609.0
 count_by_report_year,2022,216719.0
@@ -33,3 +35,26 @@ count_by_neighbourhood_code_top20,18,36241.0
 count_by_neighbourhood_code_top20,19,36060.0
 count_by_neighbourhood_code_top20,3,34634.0
 count_by_neighbourhood_code_top20,25,33551.0
+count_by_plan_top20,VAP11660,9137.0
+count_by_plan_top20,VAP6011,5522.0
+count_by_plan_top20,VAP229,5359.0
+count_by_plan_top20,VAP1314,5076.0
+count_by_plan_top20,VAP196,4974.0
+count_by_plan_top20,VAP590,4641.0
+count_by_plan_top20,EPS3434,4361.0
+count_by_plan_top20,BCS2103,4256.0
+count_by_plan_top20,VAP187,4088.0
+count_by_plan_top20,EPS5890,3920.0
+count_by_plan_top20,VAP3672,3912.0
+count_by_plan_top20,VAP92,3834.0
+count_by_plan_top20,BCS1437,3787.0
+count_by_plan_top20,LMS2995,3745.0
+count_by_plan_top20,VAP2913,3397.0
+count_by_plan_top20,LMS3094,3395.0
+count_by_plan_top20,LMS3903,3346.0
+count_by_plan_top20,BCS2313,3290.0
+count_by_plan_top20,LMS4107,3262.0
+count_by_plan_top20,404 & 1771,3229.0
+strata_plan_lot_profile,strata_rows,909941.0
+strata_plan_lot_profile,strata_unique_plan,6706.0
+strata_plan_lot_profile,strata_unique_lot,657.0
