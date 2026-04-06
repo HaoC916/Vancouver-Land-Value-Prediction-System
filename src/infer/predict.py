@@ -16,6 +16,7 @@ LOOKUP_TABLE_PATH = Path("data/processed/model_table.parquet")
 METRICS_PATH = Path("reports/figures/model_metrics.csv")
 NEIGH_ERROR_PATH = Path("reports/figures/model_neighbourhood_error.csv")
 POSTAL_CODE_PATTERN = re.compile(r"^[A-Z]\d[A-Z]\d[A-Z]\d$")
+PLAN_COL = "PLAN"
 
 
 def _normalize_postal_code(value: Any) -> str:
@@ -32,6 +33,15 @@ def _normalize_category_value(value: Any) -> str:
         return "Unknown"
     text = str(value).strip()
     if text.lower() in {"", "nan", "none", "nat", "unknown"}:
+        return "Unknown"
+    return text
+
+
+def _normalize_plan_value(value: Any) -> str:
+    if value is None:
+        return "Unknown"
+    text = str(value).strip().upper()
+    if text in {"", "NAN", "NONE", "NAT", "UNKNOWN"}:
         return "Unknown"
     return text
 
@@ -262,12 +272,29 @@ class LandValuePredictor:
 
         legal_type = _normalize_category_value(user_input["LEGAL_TYPE"])
         zoning_class = _normalize_category_value(user_input["ZONING_CLASSIFICATION"])
+        plan_value = _normalize_plan_value(user_input.get("PLAN"))
         legal_zoning_combo = f"{legal_type}__{zoning_class}"
 
         year_df = self.lookup_df[self.lookup_df["REPORT_YEAR"] == report_year]
+
         neigh = _normalize_category_value(user_input["NEIGHBOURHOOD_CODE"])
-        neigh_df = year_df[year_df["NEIGHBOURHOOD_CODE"].astype(str) == neigh] if not year_df.empty else pd.DataFrame()
-        fsa_df = year_df[year_df.get("POSTAL_FSA", pd.Series(dtype=str)).astype(str) == postal_fsa] if not year_df.empty and "POSTAL_FSA" in year_df.columns else pd.DataFrame()
+        neigh_df = (
+            year_df[year_df["NEIGHBOURHOOD_CODE"].astype(str) == neigh]
+            if not year_df.empty
+            else pd.DataFrame()
+        )
+
+        fsa_df = (
+            year_df[year_df.get("POSTAL_FSA", pd.Series(dtype=str)).astype(str) == postal_fsa]
+            if not year_df.empty and "POSTAL_FSA" in year_df.columns
+            else pd.DataFrame()
+        )
+
+        plan_df = (
+            year_df[year_df[PLAN_COL].astype(str).str.upper().str.strip() == plan_value]
+            if not year_df.empty and PLAN_COL in year_df.columns
+            else pd.DataFrame()
+        )
 
         row: dict[str, Any] = {}
         for feature in self.feature_cols:
@@ -280,6 +307,7 @@ class LandValuePredictor:
             "ZONING_DISTRICT": _normalize_category_value(user_input["ZONING_DISTRICT"]),
             "ZONING_CLASSIFICATION": zoning_class,
             "NEIGHBOURHOOD_CODE": neigh,
+            "PLAN": plan_value,
             "YEAR_BUILT": year_built,
             "BIG_IMPROVEMENT_YEAR": big_imp,
             "REPORT_YEAR_NUM": report_year,
@@ -288,8 +316,8 @@ class LandValuePredictor:
             "YEARS_SINCE_IMPROVEMENT": years_since_imp,
             "HAS_BIG_IMPROVEMENT": has_big_improvement,
             "POSTAL_FSA": postal_fsa,
-            "BUILDING_AGE_BIN": building_age_bin,
-            "IMPROVEMENT_RECENCY_BIN": imp_recency_bin,
+            "BUILDING_AGE_BIN": _building_age_bin(year_built),
+            "IMPROVEMENT_RECENCY_BIN": _improvement_recency_bin(years_since_imp),
             "LEGAL_ZONING_COMBO": legal_zoning_combo,
         }
         for k, v in direct_values.items():
@@ -314,6 +342,8 @@ class LandValuePredictor:
                     row[feature] = self._pick_numeric(feature, neigh_df, year_df, self.lookup_df)
                 elif feature.startswith("fsa_"):
                     row[feature] = self._pick_numeric(feature, fsa_df, year_df, self.lookup_df)
+                elif feature.startswith("plan_"):
+                    row[feature] = self._pick_numeric(feature, plan_df, year_df, self.lookup_df)
                 else:
                     row[feature] = self._pick_numeric(feature, year_df, self.lookup_df)
             else:
@@ -321,6 +351,8 @@ class LandValuePredictor:
                     row[feature] = self._pick_categorical(feature, neigh_df, year_df, self.lookup_df)
                 elif feature.startswith("fsa_"):
                     row[feature] = self._pick_categorical(feature, fsa_df, year_df, self.lookup_df)
+                elif feature.startswith("plan_"):
+                    row[feature] = self._pick_categorical(feature, plan_df, year_df, self.lookup_df)
                 else:
                     row[feature] = self._pick_categorical(feature, year_df, self.lookup_df)
 
@@ -329,6 +361,7 @@ class LandValuePredictor:
             "REPORT_YEAR": report_year,
             "POSTAL_FSA": postal_fsa,
             "NEIGHBOURHOOD_CODE": neigh,
+            "PLAN": plan_value,
         }
         if self.lookup_min_year is not None and self.lookup_max_year is not None:
             out_of_lookup_range = report_year < self.lookup_min_year or report_year > self.lookup_max_year
