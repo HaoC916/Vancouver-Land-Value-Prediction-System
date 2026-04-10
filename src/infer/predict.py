@@ -15,12 +15,27 @@ METADATA_PATH = Path("artifacts/model_metadata.json")
 LOOKUP_TABLE_PATH = Path("data/processed/model_table.parquet")
 METRICS_PATH = Path("reports/figures/model_metrics.csv")
 NEIGH_ERROR_PATH = Path("reports/figures/model_neighbourhood_error.csv")
+
+# Lightweight deploy lookup tables
+DEPLOY_OPTIONS_PATH = Path("data/deploy/options_lookup.parquet")
+DEPLOY_YEAR_LOOKUP_PATH = Path("data/deploy/predict_year_lookup.parquet")
+DEPLOY_NEIGH_LOOKUP_PATH = Path("data/deploy/predict_neigh_lookup.parquet")
+DEPLOY_FSA_LOOKUP_PATH = Path("data/deploy/predict_fsa_lookup.parquet")
+DEPLOY_GLOBAL_LOOKUP_PATH = Path("data/deploy/predict_global_lookup.parquet")
+
 POSTAL_CODE_PATTERN = re.compile(r"^[A-Z]\d[A-Z]\d[A-Z]\d$")
 
 
 def _normalize_postal_code(value: Any) -> str:
+    """
+    Normalize postal code into a canonical format:
+    - uppercase
+    - remove spaces
+    - unknown-like values -> "Unknown"
+    """
     if value is None:
         return "Unknown"
+
     postal = re.sub(r"\s+", "", str(value).upper()).strip()
     if postal in {"", "NAN", "NONE", "NAT", "UNKNOWN"}:
         return "Unknown"
@@ -28,8 +43,14 @@ def _normalize_postal_code(value: Any) -> str:
 
 
 def _normalize_category_value(value: Any) -> str:
+    """
+    Normalize a general categorical value:
+    - strip spaces
+    - unknown-like values -> "Unknown"
+    """
     if value is None:
         return "Unknown"
+
     text = str(value).strip()
     if text.lower() in {"", "nan", "none", "nat", "unknown"}:
         return "Unknown"
@@ -37,16 +58,25 @@ def _normalize_category_value(value: Any) -> str:
 
 
 def _safe_mode(series: pd.Series):
+    """
+    Return the mode of a series safely.
+    If no valid mode exists, return NaN.
+    """
     s = series.dropna()
     if s.empty:
         return np.nan
+
     mode = s.mode(dropna=True)
     if mode.empty:
         return np.nan
+
     return mode.iloc[0]
 
 
 def _building_age_bin(year_built: float | None) -> str:
+    """
+    Convert year built into a coarse age bucket.
+    """
     if year_built is None or np.isnan(year_built):
         return "unknown"
     if year_built <= 1949:
@@ -59,6 +89,9 @@ def _building_age_bin(year_built: float | None) -> str:
 
 
 def _improvement_recency_bin(years_since_improvement: float | None) -> str:
+    """
+    Convert years since improvement into a coarse bucket.
+    """
     if years_since_improvement is None or np.isnan(years_since_improvement):
         return "unknown"
     if years_since_improvement <= 5:
@@ -89,46 +122,118 @@ class LandValuePredictor:
         metrics_path: Path = METRICS_PATH,
         neigh_error_path: Path = NEIGH_ERROR_PATH,
     ) -> None:
+        # ------------------------------------------------------------
+        # 1. Check core required files
+        # ------------------------------------------------------------
         if not model_path.exists():
             raise FileNotFoundError(
                 f"Model artifact not found at {model_path}. "
                 "Run `python -m src.models.train_model` first."
             )
-        if not lookup_table_path.exists():
+
+        # We allow two modes:
+        # - deploy lookup mode (preferred)
+        # - full table fallback mode
+        self.use_deploy_lookup = (
+            DEPLOY_OPTIONS_PATH.exists()
+            and DEPLOY_YEAR_LOOKUP_PATH.exists()
+            and DEPLOY_NEIGH_LOOKUP_PATH.exists()
+            and DEPLOY_FSA_LOOKUP_PATH.exists()
+            and DEPLOY_GLOBAL_LOOKUP_PATH.exists()
+        )
+
+        if (not self.use_deploy_lookup) and (not lookup_table_path.exists()):
             raise FileNotFoundError(
-                f"Lookup model table not found at {lookup_table_path}. "
-                "Run `python -m src.data.build_model_table` first."
+                f"Neither deploy lookup tables nor fallback lookup table found. "
+                f"Missing: {lookup_table_path}"
             )
 
+        # ------------------------------------------------------------
+        # 2. Load trained model bundle
+        # ------------------------------------------------------------
         self.bundle = joblib.load(model_path)
         self.pipeline = self.bundle["pipeline"]
         self.feature_cols = list(self.bundle["feature_cols"])
         self.cat_cols = list(self.bundle["cat_cols"])
         self.numeric_cols = list(self.bundle["numeric_cols"])
+
+        # Optional target encoding info
         self.target_encoding = self.bundle.get("target_encoding", {}) or {}
         self.target_encoding_cols = list(self.target_encoding.get("cols", []))
         self.target_encoder_specs = dict(self.target_encoding.get("encoders", {}))
 
+        # ------------------------------------------------------------
+        # 3. Load metadata if available
+        # ------------------------------------------------------------
         self.metadata = {}
         if metadata_path.exists():
             self.metadata = pd.read_json(metadata_path, typ="series").to_dict()
 
-        self.lookup_df = pd.read_parquet(lookup_table_path).copy()
-        self.lookup_df["REPORT_YEAR"] = pd.to_numeric(
-            self.lookup_df["REPORT_YEAR"], errors="coerce"
-        ).astype("Int64")
-        valid_years = self.lookup_df["REPORT_YEAR"].dropna().astype(int)
+        # ------------------------------------------------------------
+        # 4. Load lookup tables
+        # ------------------------------------------------------------
+        if self.use_deploy_lookup:
+            # Lightweight deploy mode
+            self.lookup_df = pd.read_parquet(DEPLOY_OPTIONS_PATH).copy()
+            self.year_lookup_df = pd.read_parquet(DEPLOY_YEAR_LOOKUP_PATH).copy()
+            self.neigh_lookup_df = pd.read_parquet(DEPLOY_NEIGH_LOOKUP_PATH).copy()
+            self.fsa_lookup_df = pd.read_parquet(DEPLOY_FSA_LOOKUP_PATH).copy()
+            self.global_lookup_df = pd.read_parquet(DEPLOY_GLOBAL_LOOKUP_PATH).copy()
+        else:
+            # Fallback mode: use the full model table
+            self.lookup_df = pd.read_parquet(lookup_table_path).copy()
+            self.year_lookup_df = self.lookup_df.copy()
+            self.neigh_lookup_df = self.lookup_df.copy()
+            self.fsa_lookup_df = self.lookup_df.copy()
+            self.global_lookup_df = self.lookup_df.copy()
+
+        # Normalize REPORT_YEAR dtype in all relevant frames
+        for frame in [
+            self.lookup_df,
+            self.year_lookup_df,
+            self.neigh_lookup_df,
+            self.fsa_lookup_df,
+        ]:
+            if "REPORT_YEAR" in frame.columns:
+                frame["REPORT_YEAR"] = pd.to_numeric(
+                    frame["REPORT_YEAR"], errors="coerce"
+                ).astype("Int64")
+
+        # ------------------------------------------------------------
+        # 5. Lookup year bounds
+        # ------------------------------------------------------------
+        if "REPORT_YEAR" in self.lookup_df.columns:
+            valid_years = self.lookup_df["REPORT_YEAR"].dropna().astype(int)
+        else:
+            valid_years = pd.Series(dtype=int)
+
         self.lookup_min_year = int(valid_years.min()) if not valid_years.empty else None
         self.lookup_max_year = int(valid_years.max()) if not valid_years.empty else None
 
+        # ------------------------------------------------------------
+        # 6. Load error metric tables
+        # ------------------------------------------------------------
         self.metrics_df = pd.read_csv(metrics_path) if metrics_path.exists() else pd.DataFrame()
         self.neigh_error_df = (
             pd.read_csv(neigh_error_path) if neigh_error_path.exists() else pd.DataFrame()
         )
 
-        self.default_report_year = int(
-            self.metadata.get("default_report_year", self.lookup_df["REPORT_YEAR"].dropna().max())
+        # ------------------------------------------------------------
+        # 7. Default report year
+        # ------------------------------------------------------------
+        fallback_default_year = (
+            int(self.lookup_df["REPORT_YEAR"].dropna().max())
+            if ("REPORT_YEAR" in self.lookup_df.columns and not self.lookup_df["REPORT_YEAR"].dropna().empty)
+            else 2026
         )
+
+        self.default_report_year = int(
+            self.metadata.get("default_report_year", fallback_default_year)
+        )
+
+        # ------------------------------------------------------------
+        # 8. Known postal codes
+        # ------------------------------------------------------------
         if "PROPERTY_POSTAL_CODE" in self.lookup_df.columns:
             known_postals = (
                 self.lookup_df["PROPERTY_POSTAL_CODE"]
@@ -137,14 +242,23 @@ class LandValuePredictor:
                 .astype(str)
             )
             self.known_postal_codes = {
-                p for p in known_postals.tolist() if p != "Unknown" and POSTAL_CODE_PATTERN.match(p)
+                p
+                for p in known_postals.tolist()
+                if p != "Unknown" and POSTAL_CODE_PATTERN.match(p)
             }
         else:
             self.known_postal_codes = set()
 
+        # ------------------------------------------------------------
+        # 9. Default numeric / categorical fallback values
+        # ------------------------------------------------------------
         self.numeric_defaults = {}
         for c in self.numeric_cols:
-            if c in self.lookup_df.columns:
+            if c in self.global_lookup_df.columns:
+                self.numeric_defaults[c] = pd.to_numeric(
+                    self.global_lookup_df[c], errors="coerce"
+                ).median()
+            elif c in self.lookup_df.columns:
                 self.numeric_defaults[c] = pd.to_numeric(
                     self.lookup_df[c], errors="coerce"
                 ).median()
@@ -153,7 +267,9 @@ class LandValuePredictor:
 
         self.categorical_defaults = {}
         for c in self.cat_cols:
-            if c in self.lookup_df.columns:
+            if c in self.global_lookup_df.columns:
+                self.categorical_defaults[c] = _safe_mode(self.global_lookup_df[c])
+            elif c in self.lookup_df.columns:
                 self.categorical_defaults[c] = _safe_mode(self.lookup_df[c])
             else:
                 self.categorical_defaults[c] = "Unknown"
@@ -174,41 +290,61 @@ class LandValuePredictor:
         return normalized in self.known_postal_codes
 
     def get_top_options(self, column: str, top_n: int = 100) -> list[str]:
+        """
+        Return the top-N most frequent values of a categorical field.
+        Used by frontend option suggestion endpoints.
+        """
         if column not in self.lookup_df.columns:
             return []
+
         s = self.lookup_df[column].dropna().astype(str).str.strip()
         if s.empty:
             return []
+
         counts = s.value_counts().head(top_n)
         return counts.index.tolist()
 
     def _pick_numeric(self, feature: str, *frames: pd.DataFrame) -> float:
+        """
+        Pick the first available numeric value from the provided frames.
+        Use median as a stable summary.
+        """
         for frame in frames:
             if frame is not None and not frame.empty and feature in frame.columns:
                 values = pd.to_numeric(frame[feature], errors="coerce").dropna()
                 if not values.empty:
                     return float(values.median())
+
         val = self.numeric_defaults.get(feature, np.nan)
         return float(val) if pd.notna(val) else np.nan
 
     def _pick_categorical(self, feature: str, *frames: pd.DataFrame):
+        """
+        Pick the first available categorical value from the provided frames.
+        Use mode as a stable summary.
+        """
         for frame in frames:
             if frame is not None and not frame.empty and feature in frame.columns:
                 v = _safe_mode(frame[feature])
                 if pd.notna(v):
                     return str(v)
+
         v = self.categorical_defaults.get(feature, "Unknown")
         if pd.isna(v):
             return "Unknown"
         return str(v)
 
     def _target_encoded_value(self, source_col: str, raw_value: Any) -> float:
+        """
+        Recreate train-only target-encoded features for inference.
+        """
         spec = self.target_encoder_specs.get(source_col)
         if not spec:
             return np.nan
 
         mapping = spec.get("mapping", {})
         global_mean = float(spec.get("global_mean", np.nan))
+
         if source_col == "PROPERTY_POSTAL_CODE":
             key = _normalize_postal_code(raw_value)
         else:
@@ -218,6 +354,9 @@ class LandValuePredictor:
         return float(value) if pd.notna(value) else np.nan
 
     def _build_row(self, user_input: dict[str, Any]) -> tuple[pd.DataFrame, dict[str, Any]]:
+        """
+        Build a single-row model input dataframe from user input.
+        """
         required = [
             "PROPERTY_POSTAL_CODE",
             "LEGAL_TYPE",
@@ -231,16 +370,23 @@ class LandValuePredictor:
             raise ValueError(f"Missing required input field(s): {missing}")
 
         report_year = int(user_input.get("REPORT_YEAR") or self.default_report_year)
+
+        # -----------------------------
+        # Normalize user-entered values
+        # -----------------------------
         postal = _normalize_postal_code(user_input.get("PROPERTY_POSTAL_CODE"))
         if not self.is_valid_canadian_postal_code(postal):
             raise ValueError(
                 "Please enter a valid Canadian postal code (example: V6H2J4 or V6H 2J4)."
             )
+
         postal_fsa = postal[:3] if postal != "Unknown" and len(postal) >= 3 else "Unknown"
         if postal_fsa != "Unknown" and re.match(r"^[A-Z]\d[A-Z]$", postal_fsa) is None:
             postal_fsa = "Unknown"
 
-        year_built = pd.to_numeric(pd.Series([user_input.get("YEAR_BUILT")]), errors="coerce").iloc[0]
+        year_built = pd.to_numeric(
+            pd.Series([user_input.get("YEAR_BUILT")]), errors="coerce"
+        ).iloc[0]
         year_built = float(year_built) if pd.notna(year_built) else np.nan
 
         big_imp = pd.to_numeric(
@@ -261,23 +407,57 @@ class LandValuePredictor:
         imp_recency_bin = _improvement_recency_bin(years_since_imp)
 
         legal_type = _normalize_category_value(user_input["LEGAL_TYPE"])
+        zoning_district = _normalize_category_value(user_input["ZONING_DISTRICT"])
         zoning_class = _normalize_category_value(user_input["ZONING_CLASSIFICATION"])
+        neigh = _normalize_category_value(user_input["NEIGHBOURHOOD_CODE"])
+
         legal_zoning_combo = f"{legal_type}__{zoning_class}"
 
-        year_df = self.lookup_df[self.lookup_df["REPORT_YEAR"] == report_year]
-        neigh = _normalize_category_value(user_input["NEIGHBOURHOOD_CODE"])
-        neigh_df = year_df[year_df["NEIGHBOURHOOD_CODE"].astype(str) == neigh] if not year_df.empty else pd.DataFrame()
-        fsa_df = year_df[year_df.get("POSTAL_FSA", pd.Series(dtype=str)).astype(str) == postal_fsa] if not year_df.empty and "POSTAL_FSA" in year_df.columns else pd.DataFrame()
+        # -----------------------------
+        # Build small lookup frames
+        # -----------------------------
+        year_df = pd.DataFrame()
+        if "REPORT_YEAR" in self.year_lookup_df.columns:
+            year_df = self.year_lookup_df[
+                self.year_lookup_df["REPORT_YEAR"] == report_year
+            ].copy()
+        if year_df.empty:
+            year_df = self.year_lookup_df.copy()
 
+        neigh_df = pd.DataFrame()
+        if (
+            "REPORT_YEAR" in self.neigh_lookup_df.columns
+            and "NEIGHBOURHOOD_CODE" in self.neigh_lookup_df.columns
+        ):
+            neigh_df = self.neigh_lookup_df[
+                (self.neigh_lookup_df["REPORT_YEAR"] == report_year)
+                & (self.neigh_lookup_df["NEIGHBOURHOOD_CODE"].astype(str) == neigh)
+            ].copy()
+
+        fsa_df = pd.DataFrame()
+        if (
+            "REPORT_YEAR" in self.fsa_lookup_df.columns
+            and "POSTAL_FSA" in self.fsa_lookup_df.columns
+        ):
+            fsa_df = self.fsa_lookup_df[
+                (self.fsa_lookup_df["REPORT_YEAR"] == report_year)
+                & (self.fsa_lookup_df["POSTAL_FSA"].astype(str) == postal_fsa)
+            ].copy()
+
+        # -----------------------------
+        # Start with empty row
+        # -----------------------------
         row: dict[str, Any] = {}
         for feature in self.feature_cols:
             row[feature] = np.nan
 
-        # Direct + derived user-visible fields.
+        # -----------------------------
+        # Direct and derived fields
+        # -----------------------------
         direct_values = {
             "PROPERTY_POSTAL_CODE": postal,
             "LEGAL_TYPE": legal_type,
-            "ZONING_DISTRICT": _normalize_category_value(user_input["ZONING_DISTRICT"]),
+            "ZONING_DISTRICT": zoning_district,
             "ZONING_CLASSIFICATION": zoning_class,
             "NEIGHBOURHOOD_CODE": neigh,
             "YEAR_BUILT": year_built,
@@ -292,53 +472,81 @@ class LandValuePredictor:
             "IMPROVEMENT_RECENCY_BIN": imp_recency_bin,
             "LEGAL_ZONING_COMBO": legal_zoning_combo,
         }
+
         for k, v in direct_values.items():
             if k in row:
                 row[k] = v
 
-        # Populate train-only target-encoded features when the model expects them.
+        # -----------------------------
+        # Recreate target-encoded fields
+        # -----------------------------
         for source_col in self.target_encoding_cols:
             te_col = f"{source_col}_te"
             if te_col not in row:
                 continue
+
             source_val = direct_values.get(source_col, user_input.get(source_col))
             row[te_col] = self._target_encoded_value(source_col, source_val)
 
-        # Fill remaining features from lookup tables/defaults.
+        # -----------------------------
+        # Fill missing features from lookup tables
+        # -----------------------------
         for feature in self.feature_cols:
             if pd.notna(row.get(feature, np.nan)):
                 continue
 
             if feature in self.numeric_cols:
                 if feature.startswith("neigh_"):
-                    row[feature] = self._pick_numeric(feature, neigh_df, year_df, self.lookup_df)
+                    row[feature] = self._pick_numeric(
+                        feature, neigh_df, year_df, self.global_lookup_df
+                    )
                 elif feature.startswith("fsa_"):
-                    row[feature] = self._pick_numeric(feature, fsa_df, year_df, self.lookup_df)
+                    row[feature] = self._pick_numeric(
+                        feature, fsa_df, year_df, self.global_lookup_df
+                    )
                 else:
-                    row[feature] = self._pick_numeric(feature, year_df, self.lookup_df)
+                    row[feature] = self._pick_numeric(
+                        feature, year_df, self.global_lookup_df
+                    )
             else:
                 if feature.startswith("neigh_"):
-                    row[feature] = self._pick_categorical(feature, neigh_df, year_df, self.lookup_df)
+                    row[feature] = self._pick_categorical(
+                        feature, neigh_df, year_df, self.global_lookup_df
+                    )
                 elif feature.startswith("fsa_"):
-                    row[feature] = self._pick_categorical(feature, fsa_df, year_df, self.lookup_df)
+                    row[feature] = self._pick_categorical(
+                        feature, fsa_df, year_df, self.global_lookup_df
+                    )
                 else:
-                    row[feature] = self._pick_categorical(feature, year_df, self.lookup_df)
+                    row[feature] = self._pick_categorical(
+                        feature, year_df, self.global_lookup_df
+                    )
 
         X = pd.DataFrame([row], columns=self.feature_cols)
+
         used = {
             "REPORT_YEAR": report_year,
             "POSTAL_FSA": postal_fsa,
             "NEIGHBOURHOOD_CODE": neigh,
         }
+
         if self.lookup_min_year is not None and self.lookup_max_year is not None:
-            out_of_lookup_range = report_year < self.lookup_min_year or report_year > self.lookup_max_year
+            out_of_lookup_range = (
+                report_year < self.lookup_min_year
+                or report_year > self.lookup_max_year
+            )
             used["LOOKUP_SUPPORTED_YEAR_RANGE"] = (
                 f"{self.lookup_min_year}-{self.lookup_max_year}"
             )
             used["LOOKUP_YEAR_FALLBACK"] = out_of_lookup_range
+
         return X, used
 
     def _error_band(self, prediction: float, neighbourhood_code: str) -> tuple[float, str]:
+        """
+        Estimate prediction uncertainty band.
+        Prefer neighbourhood-level MAE if available; otherwise use global metrics.
+        """
         if not self.neigh_error_df.empty and {"NEIGHBOURHOOD_CODE", "mean_abs_error"}.issubset(
             self.neigh_error_df.columns
         ):
@@ -361,11 +569,17 @@ class LandValuePredictor:
         return float(fallback), "fallback_20pct"
 
     def predict(self, user_input: dict[str, Any]) -> PredictionResult:
+        """
+        Run final model prediction.
+        """
         X, used = self._build_row(user_input)
+
         pred_log = float(self.pipeline.predict(X)[0])
         point = max(0.0, float(np.expm1(pred_log)))
 
-        band, source = self._error_band(point, str(user_input["NEIGHBOURHOOD_CODE"]).strip())
+        band, source = self._error_band(
+            point, str(user_input["NEIGHBOURHOOD_CODE"]).strip()
+        )
         lower = max(0.0, point - band)
         upper = point + band
 
