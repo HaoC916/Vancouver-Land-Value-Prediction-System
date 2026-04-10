@@ -41,3 +41,14 @@ Thumbs.db
 .idea/
 *.swp
 data/raw.zip
+
+# Keep deploy assets for cloud demo
+!data/deploy/
+!data/deploy/address_lookup.parquet
+
+!artifacts/
+!artifacts/land_value_model.joblib
+!artifacts/model_metadata.json
+
+!data/processed/
+!data/processed/model_table.parquet

@@ -42,7 +42,8 @@ predictor = LandValuePredictor()
 #
 # For demo simplicity, this version reads from the raw property-tax CSV.
 # For future improvement, create a pre-processed table.
-ADDRESS_SOURCE_PATH = Path("data/raw/property-tax-report.csv")
+#ADDRESS_SOURCE_PATH = Path("data/raw/property-tax-report.csv")
+ADDRESS_SOURCE_PATH = Path("data/deploy/address_lookup.parquet")
 
 
 # ------------------------------------------------------------
@@ -394,12 +395,16 @@ def load_address_lookup_df() -> pd.DataFrame:
     ]
 
     # Read only needed columns to reduce memory usage
-    df = pd.read_csv(
-        ADDRESS_SOURCE_PATH,
-        sep=";",
-        low_memory=False,
-        usecols=lambda c: c in address_keep_cols,
-    ).copy()
+    if ADDRESS_SOURCE_PATH.suffix.lower() == ".parquet":
+        df = pd.read_parquet(ADDRESS_SOURCE_PATH).copy()
+        df = df[[c for c in address_keep_cols if c in df.columns]].copy()
+    else:
+        df = pd.read_csv(
+            ADDRESS_SOURCE_PATH,
+            sep=";",
+            low_memory=False,
+            usecols=lambda c: c in address_keep_cols,
+        ).copy()
 
     # For civic number, accept:
     # - FROM only
