@@ -21,7 +21,7 @@ app = FastAPI(title="Land Value API")
 # ------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://vancouver-land-value-prediction-sys.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -539,7 +539,7 @@ def fuzzy_match_address_candidates(
         matched_df, used_report_year, postal_match_mode
     """
     address_lookup_df = get_address_lookup_df()
-    
+
     target_year = (
         int(report_year) if report_year is not None else predictor.default_report_year
     )
