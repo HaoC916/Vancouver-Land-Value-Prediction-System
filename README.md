@@ -14,7 +14,9 @@ This repository uses one consolidated final pipeline:
 - Final merged table: `data/processed/model_table.parquet`
 - Final trainer: `python -m src.models.train_model`
 - Notebook demo: `final_submission_demo.ipynb`
-- Web demo app: `app.py`
+- Web demo apps:
+  - React frontend + REST API backend
+  - Streamlit demo: `app.py`
 - Census status: deferred by default
 
 ## Notebook Demo Entry Point
@@ -23,39 +25,6 @@ This repository includes a root-level notebook: `final_submission_demo.ipynb`.
 It is the easiest entry point for instructors or readers who prefer Jupyter Notebook. The notebook does not duplicate core project logic. Instead, it runs the existing Python modules in sequence and displays final outputs. It checks raw files, runs the pipeline steps, and shows final metrics, tables, and figures.
 
 If you prefer a step-by-step notebook workflow, open `final_submission_demo.ipynb` and run the cells from top to bottom.
-
-## Interactive Demo (Web App)
-The project includes a lightweight web demo built with Streamlit:
-- `app.py`
-
-The demo allows users to enter a small set of property attributes and receive:
-- a point estimate
-- an estimated land value range
-
-The demo uses the same trained model as the final pipeline (no separate model logic).
-
-### What the demo does
-- takes user-friendly inputs (postal code, zoning, neighbourhood, year built, optional improvement year, report year)
-- internally reconstructs the full model feature vector using:
-  - derived fields (for example `POSTAL_FSA`, property age, improvement flags)
-  - lookup values from the merged model table (`data/processed/model_table.parquet`)
-- runs the trained model and returns prediction plus an estimated uncertainty range
-- intentionally limits `REPORT_YEAR` to a near-range window (`2024`–`2027`) to avoid misleading long-horizon outputs
-- normalizes postal codes internally (uppercase, remove spaces) before validation and inference
-- validates basic Canadian postal-code format (`A1A1A1` pattern)
-
-### Important note
-- The demo predicts **land assessment value (`CURRENT_LAND_VALUE`)**
-- It is **not** a guaranteed market sale price or a long-term market-forecasting tool
-- Near-range years are enforced because macro and local-history lookup features are only supported near the observed data horizon
-- Invalid-format postal codes are rejected in the UI.
-- Valid-format postal codes not seen in training are still estimated, but shown with a lower-confidence warning.
-
-### Run the web demo
-```bash
-python -m src.models.train_model
-python -m streamlit run app.py
-```
 
 ## Google Drive Raw Data Link
 Raw data is shared outside git and should be downloaded from:  
@@ -187,7 +156,41 @@ The strongest signals in this project are fine-grained location and property-typ
 Train-only target encoding gives the model a cleaner numeric summary of how each category behaved in historical training data, while still avoiding leakage from the test period. In practice, this helped more than adding extra coarse yearly macro indicators.
 
 ## Demo Web App
-The project includes a local Streamlit demo at `app.py`.
+The project includes **two local demo interfaces** for presentation and educational use.
+
+Both demos use the same trained final model artifact (`artifacts/land_value_model.joblib`) and estimate **assessed land value**, not guaranteed market sale price. The two demos differ mainly in interface style and target users rather than underlying model logic.
+
+### Option A — React Frontend + REST API Backend
+This demo is a web-style interactive system built with:
+- a React frontend
+- a Python REST API backend
+
+It is designed to provide a more user-facing prediction experience and currently supports two modes:
+
+- **Precise Mode**  
+  A guided, step-by-step prediction workflow.  
+  The frontend applies context-aware filtering, so valid options are narrowed based on previous user inputs.  
+  This helps reduce unrealistic or non-existent property combinations.
+
+- **Fuzzy Mode**  
+  A simplified prediction workflow for non-expert users.  
+  Users can start from address + postal code, retrieve matched candidate properties, and then generate a prediction from the selected match.
+
+App notes:
+- predicts **assessed land value (`CURRENT_LAND_VALUE`)**
+- uses the same trained model as the final pipeline
+- supports two interaction modes:
+  - **Precise Mode** for guided step-by-step prediction
+  - **Fuzzy Mode** for address-based prediction
+- reconstructs part of the full model feature vector using:
+  - derived fields
+  - lookup values from `data/processed/model_table.parquet`
+- returns:
+  - a point estimate
+  - an estimated value range
+
+### Option B — Streamlit Demo
+This demo is a lightweight local interface implemented in Streamlit at `app.py`.
 
 - It estimates **assessed land value** from a small set of user inputs.
 - It uses the trained final model artifact (`artifacts/land_value_model.joblib`).
@@ -238,7 +241,22 @@ Optional census merge attempt:
 python -m src.data.build_model_table --merge_census
 ```
 
-### Run the Streamlit demo app
+## Run the demos
+### Run Option 1 — React + REST API
+Start the backend API first, then run the React frontend.
+Backend:
+```bash
+python -m src.models.train_model
+python -m uvicorn src.api.main:app --reload --port 8000
+```
+Frontend:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### Run Option 2 — Streamlit
 ```bash
 python -m src.models.train_model
 python -m streamlit run app.py
