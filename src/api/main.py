@@ -501,7 +501,16 @@ def load_address_lookup_df() -> pd.DataFrame:
 
 
 # Load once at startup
-address_lookup_df = load_address_lookup_df()
+#address_lookup_df = load_address_lookup_df()
+_address_lookup_df: pd.DataFrame | None = None
+
+def get_address_lookup_df() -> pd.DataFrame:
+    global _address_lookup_df
+
+    if _address_lookup_df is None:
+        _address_lookup_df = load_address_lookup_df()
+
+    return _address_lookup_df
 
 
 # ------------------------------------------------------------
@@ -529,6 +538,8 @@ def fuzzy_match_address_candidates(
     Returns:
         matched_df, used_report_year, postal_match_mode
     """
+    address_lookup_df = get_address_lookup_df()
+    
     target_year = (
         int(report_year) if report_year is not None else predictor.default_report_year
     )

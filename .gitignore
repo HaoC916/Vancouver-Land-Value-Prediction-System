@@ -50,5 +50,10 @@ data/raw.zip
 !artifacts/land_value_model.joblib
 !artifacts/model_metadata.json
 
-!data/processed/
-!data/processed/model_table.parquet
+!data/deploy/
+!data/deploy/address_lookup.parquet
+!data/deploy/options_lookup.parquet
+!data/deploy/predict_year_lookup.parquet
+!data/deploy/predict_neigh_lookup.parquet
+!data/deploy/predict_fsa_lookup.parquet
+!data/deploy/predict_global_lookup.parquet
