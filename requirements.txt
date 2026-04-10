@@ -5,3 +5,7 @@ matplotlib
 jupyter
 joblib
 streamlit
+fastapi
+uvicorn
+pydantic
+pyarrow
