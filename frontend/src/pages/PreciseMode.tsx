@@ -793,7 +793,7 @@ export default function ChatEstimate() {
       setResult(data);
 
       queueAgentMessage(
-        `Done. I estimated the assessed land value at ${formatCurrency(
+        `Done. I estimated the assessed property value at ${formatCurrency(
           data.point_estimate
         )}.\n\n` +
           `Estimated range: ${formatCurrency(data.lower_bound)} to ${formatCurrency(
@@ -1072,7 +1072,7 @@ export default function ChatEstimate() {
               <div className="space-y-4">
                 <div>
                   <div className="text-sm text-slate-500">
-                    Point Estimate (Assessed Land Value)
+                    Estimated property value
                   </div>
                   <div className="mt-1 text-4xl font-semibold tracking-tight text-slate-900">
                     {formatCurrency(result.point_estimate)}

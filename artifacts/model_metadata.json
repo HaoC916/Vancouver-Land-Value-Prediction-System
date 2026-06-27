@@ -1,12 +1,13 @@
 {
-  "target": "CURRENT_LAND_VALUE",
-  "prediction_note": "This model predicts assessed land value (CURRENT_LAND_VALUE), not guaranteed sale price.",
+  "target": "CURRENT_PROPERTY_VALUE",
+  "prediction_note": "This model predicts total assessed property value (CURRENT_PROPERTY_VALUE = land + improvement), not a guaranteed sale price.",
   "feature_names_used": [
     "ZONING_DISTRICT",
     "ZONING_CLASSIFICATION",
     "YEAR_BUILT",
     "BIG_IMPROVEMENT_YEAR",
     "LAND_COORDINATE",
+    "CIVIC_FROM_NUM",
     "PROPERTY_AGE",
     "YEARS_SINCE_IMPROVEMENT",
     "REPORT_YEAR_NUM",
@@ -56,11 +57,12 @@
     "fsa_prev_2yr_median_land_value",
     "fsa_prev_3yr_rolling_median_land_value",
     "fsa_prev_3yr_growth_trend",
+    "pid_prev_year_property_value",
     "PROPERTY_POSTAL_CODE_te",
     "NEIGHBOURHOOD_CODE_te",
     "LEGAL_TYPE_te"
   ],
-  "n_features_total": 57,
+  "n_features_total": 59,
   "train_year_rule": "REPORT_YEAR < 2024",
   "test_year_rule": "REPORT_YEAR >= 2024",
   "default_report_year": 2026,
@@ -69,7 +71,7 @@
   "target_encoding": {
     "enabled": true,
     "mode": "b",
-    "target": "log1p_current_land_value",
+    "target": "log1p_current_property_value",
     "columns": [
       "PROPERTY_POSTAL_CODE",
       "NEIGHBOURHOOD_CODE",

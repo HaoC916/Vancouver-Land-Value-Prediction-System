@@ -73,6 +73,10 @@ class PredictRequest(BaseModel):
     YEAR_BUILT: int
     BIG_IMPROVEMENT_YEAR: Optional[int] = None
     REPORT_YEAR: Optional[int] = None
+    # Identifies the specific property/unit so the model can use its own prior
+    # assessed value (the dominant per-unit signal). PID is a formatted string
+    # such as "010-871-501".
+    PID: Optional[str] = None
 
 
 # ------------------------------------------------------------
@@ -761,6 +765,7 @@ def fuzzy_lookup(
         candidates.append(
             {
                 "candidate_id": len(candidates) + 1,
+                "PID": str(row["PID"]).strip() if pd.notna(row.get("PID")) else None,
                 "display_address": str(row.get("DISPLAY_ADDRESS", "")),
                 "PROPERTY_POSTAL_CODE": normalize_postal_code(row.get("PROPERTY_POSTAL_CODE")),
                 "LEGAL_TYPE": str(row.get("LEGAL_TYPE", "")).strip(),

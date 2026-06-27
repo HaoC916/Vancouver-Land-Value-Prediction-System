@@ -21,7 +21,7 @@ from src.viz.baseline_plots import save_model_plots
 from src.eval.metrics import compute_metrics, prediction_sanity_stats, scale_warning, legal_type_summary
 
 
-TARGET_COL = "CURRENT_LAND_VALUE"
+TARGET_COL = "CURRENT_PROPERTY_VALUE"
 REPORT_YEAR_COL = "REPORT_YEAR"
 ID_EXCLUDE_COLS = {"PID"}
 HIGH_CARD_COLS = ["PROPERTY_POSTAL_CODE", "NEIGHBOURHOOD_CODE", "LEGAL_TYPE"]
@@ -146,7 +146,7 @@ def _prepare_encoded_features(
     encoder_payload = {
         "enabled": True,
         "mode": encoding_mode,
-        "target": "log1p_current_land_value",
+        "target": "log1p_current_property_value",
         "cols": available_high_card,
         "encoders": {
             col: {
@@ -200,7 +200,7 @@ def train_and_evaluate(
     print(f"[train_model] Using model backend: {model_backend}")
     print(f"[train_model] Target encoding mode: {encoding_mode.upper()}")
     print(f"[train_model] Target encoded columns: {encoded_cols}")
-    print("[train_model] Target encoding target: log1p(CURRENT_LAND_VALUE)")
+    print("[train_model] Target encoding target: log1p(CURRENT_PROPERTY_VALUE)")
 
     pipeline = build_pipeline(cat_cols, numeric_cols, model)
     y_train_log = np.log1p(y_train)
@@ -247,7 +247,7 @@ def train_and_evaluate(
         "n_features_num": float(len(numeric_cols)),
         "model_backend": model_backend,
         "encoding_mode": encoding_mode,
-        "target_encoding_target": "log1p_current_land_value",
+        "target_encoding_target": "log1p_current_property_value",
     }
 
     if save_outputs:
@@ -320,7 +320,7 @@ def train_and_evaluate(
 
         metadata = {
             "target": TARGET_COL,
-            "prediction_note": "This model predicts assessed land value (CURRENT_LAND_VALUE), not guaranteed sale price.",
+            "prediction_note": "This model predicts total assessed property value (CURRENT_PROPERTY_VALUE = land + improvement), not a guaranteed sale price.",
             "feature_names_used": list(X_train.columns),
             "n_features_total": X_train.shape[1],
             "train_year_rule": "REPORT_YEAR < 2024",
@@ -331,7 +331,7 @@ def train_and_evaluate(
             "target_encoding": {
                 "enabled": True,
                 "mode": encoding_mode,
-                "target": "log1p_current_land_value",
+                "target": "log1p_current_property_value",
                 "columns": encoded_cols,
             },
         }

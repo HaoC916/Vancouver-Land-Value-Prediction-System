@@ -10,10 +10,12 @@ KEEP_COLS = [
     "REPORT_YEAR",
     "NEIGHBOURHOOD_CODE",
     "CURRENT_LAND_VALUE",
+    "CURRENT_IMPROVEMENT_VALUE",
     "LEGAL_TYPE",
     "ZONING_DISTRICT",
     "ZONING_CLASSIFICATION",
     "PROPERTY_POSTAL_CODE",
+    "FROM_CIVIC_NUMBER",
     "YEAR_BUILT",
     "BIG_IMPROVEMENT_YEAR",
     "LAND_COORDINATE",
@@ -28,7 +30,8 @@ CAT_COLS = [
 ]
 
 KEY_MISSING_COLS = [
-    "CURRENT_LAND_VALUE",
+    "CURRENT_PROPERTY_VALUE",
+    "CIVIC_FROM_NUM",
     "YEAR_BUILT",
     "BIG_IMPROVEMENT_YEAR",
     "LAND_COORDINATE",
@@ -43,13 +46,34 @@ def clean_property_tax(in_path: Path, out_path: Path, summary_path: Path) -> Non
     df = df[KEEP_COLS].copy()
 
     df["CURRENT_LAND_VALUE"] = pd.to_numeric(df["CURRENT_LAND_VALUE"], errors="coerce")
+    df["CURRENT_IMPROVEMENT_VALUE"] = (
+        pd.to_numeric(df["CURRENT_IMPROVEMENT_VALUE"], errors="coerce")
+        .fillna(0.0)
+        .clip(lower=0.0)
+    )
     df["REPORT_YEAR"] = pd.to_numeric(df["REPORT_YEAR"], errors="coerce")
     df["LAND_COORDINATE"] = pd.to_numeric(df["LAND_COORDINATE"], errors="coerce")
 
+    # Prediction target is total assessed PROPERTY value = land + improvement.
+    # This makes condo/strata estimates meaningful (each unit carries its own
+    # improvement value) instead of a near-meaningless land share.
     df = df.dropna(subset=["CURRENT_LAND_VALUE"])
     df = df[df["CURRENT_LAND_VALUE"] > 0]
+    df["CURRENT_PROPERTY_VALUE"] = (
+        df["CURRENT_LAND_VALUE"] + df["CURRENT_IMPROVEMENT_VALUE"]
+    )
+    df = df[df["CURRENT_PROPERTY_VALUE"] > 0]
     df = df.dropna(subset=["REPORT_YEAR"])
     df = df[(df["REPORT_YEAR"] >= 2020) & (df["REPORT_YEAR"] <= 2026)]
+
+    # Unit signal: FROM_CIVIC_NUMBER holds the unit number for strata (the
+    # building number lives in TO_CIVIC_NUMBER) and the street number otherwise.
+    # Exposing it lets the model give different units in one building different
+    # estimates.
+    df["CIVIC_FROM_NUM"] = pd.to_numeric(
+        df["FROM_CIVIC_NUMBER"].astype(str).str.extract(r"(\d+)", expand=False),
+        errors="coerce",
+    )
 
     for col in ["YEAR_BUILT", "BIG_IMPROVEMENT_YEAR"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -80,6 +104,12 @@ def clean_property_tax(in_path: Path, out_path: Path, summary_path: Path) -> Non
 
     df["YEARS_SINCE_IMPROVEMENT"] = df["REPORT_YEAR"] - df["BIG_IMPROVEMENT_YEAR"]
     df.loc[df["BIG_IMPROVEMENT_YEAR"].isna(), "YEARS_SINCE_IMPROVEMENT"] = np.nan
+
+    # Drop the raw value components (they directly compose the target, so keeping
+    # them would leak) and the raw civic string (CIVIC_FROM_NUM replaces it).
+    df = df.drop(
+        columns=["CURRENT_LAND_VALUE", "CURRENT_IMPROVEMENT_VALUE", "FROM_CIVIC_NUMBER"]
+    )
 
     total_rows_after = len(df)
 

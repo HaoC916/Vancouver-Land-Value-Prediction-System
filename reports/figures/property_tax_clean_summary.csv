@@ -1,7 +1,8 @@
 section,metric,value
 rows,total_rows_before,1551133.0
 rows,total_rows_after,1525600.0
-missing_rate,CURRENT_LAND_VALUE,0.0
+missing_rate,CURRENT_PROPERTY_VALUE,0.0
+missing_rate,CIVIC_FROM_NUM,0.492946
 missing_rate,YEAR_BUILT,0.028582
 missing_rate,BIG_IMPROVEMENT_YEAR,0.028591
 missing_rate,LAND_COORDINATE,0.0

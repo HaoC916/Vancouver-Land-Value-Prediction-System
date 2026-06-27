@@ -85,7 +85,8 @@ def main() -> None:
         "NEIGHBOURHOOD_CODE",
     ]
 
-    keep_cols = sorted(set(feature_cols + option_cols))
+    # PID is kept (not a feature) so we can build the per-unit value lookup below.
+    keep_cols = sorted(set(feature_cols + option_cols + ["PID"]))
 
     df = pd.read_parquet(SOURCE_PATH)
     df = df[[c for c in keep_cols if c in df.columns]].copy()
@@ -141,12 +142,25 @@ def main() -> None:
     )
     global_lookup.to_parquet(DEPLOY_DIR / "predict_global_lookup.parquet", index=False)
 
+    # 6. Per-PID previous-year value lookup. This is what makes per-unit estimates
+    # work at inference: each selected unit's own prior assessment is fed to the
+    # model's dominant feature (pid_prev_year_property_value).
+    if "pid_prev_year_property_value" in df.columns and "PID" in df.columns:
+        pid_lookup = (
+            df[["PID", "REPORT_YEAR", "pid_prev_year_property_value"]]
+            .dropna(subset=["pid_prev_year_property_value"])
+            .drop_duplicates(["PID", "REPORT_YEAR"])
+            .copy()
+        )
+        pid_lookup.to_parquet(DEPLOY_DIR / "predict_pid_lookup.parquet", index=False)
+
     print("Saved deploy lookup tables to data/deploy/")
     print("options_lookup.parquet")
     print("predict_year_lookup.parquet")
     print("predict_neigh_lookup.parquet")
     print("predict_fsa_lookup.parquet")
     print("predict_global_lookup.parquet")
+    print("predict_pid_lookup.parquet")
 
 
 if __name__ == "__main__":

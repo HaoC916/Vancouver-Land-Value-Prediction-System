@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 
-TARGET_COL = "CURRENT_LAND_VALUE"
+TARGET_COL = "CURRENT_PROPERTY_VALUE"
 YEAR_COL = "REPORT_YEAR"
 NEIGH_COL = "NEIGHBOURHOOD_CODE"
 POSTAL_COL = "PROPERTY_POSTAL_CODE"
@@ -232,6 +232,25 @@ def _compute_group_history(
     return agg[keep], created_cols
 
 
+def _compute_pid_history(fact_df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Per-property (PID) previous-year value. This is the single strongest signal
+    for telling apart units in the same building, since each unit's own prior
+    assessment captures size/floor/view that no other column carries.
+
+    Leakage-safe: uses shift(1) over a property's own history, i.e. the prior
+    year only, which is known at prediction time.
+    """
+    base = (
+        fact_df.groupby(["PID", YEAR_COL], as_index=False)[TARGET_COL]
+        .median()
+        .sort_values(["PID", YEAR_COL])
+    )
+    base["pid_prev_year_property_value"] = base.groupby("PID")[TARGET_COL].shift(1)
+    created = ["pid_prev_year_property_value"]
+    return base[[YEAR_COL, "PID"] + created], created
+
+
 def _merge_census_if_robust(
     df: pd.DataFrame, census_path: Path, merge_census: bool
 ) -> tuple[pd.DataFrame, str]:
@@ -311,6 +330,11 @@ def build_model_table(
     fact = fact.merge(fsa_hist[fsa_keep], on=[YEAR_COL, "POSTAL_FSA"], how="left")
     for c in fsa_keep[2:]:
         _append_summary(summary_rows, "engineered_group_feature", c, "created")
+
+    pid_hist, pid_cols = _compute_pid_history(fact)
+    fact = fact.merge(pid_hist, on=[YEAR_COL, "PID"], how="left")
+    for c in pid_cols:
+        _append_summary(summary_rows, "engineered_pid_feature", c, "created")
 
     fact, census_status = _merge_census_if_robust(fact, census_path, merge_census)
     _append_summary(summary_rows, "source_status", "census_profile", census_status)

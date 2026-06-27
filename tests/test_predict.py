@@ -22,7 +22,22 @@ def _sample(predictor: LandValuePredictor) -> dict:
 def test_predictor_loads_in_deploy_lookup_mode():
     p = LandValuePredictor()
     assert p.use_deploy_lookup is True
-    assert len(p.feature_cols) == 57
+    # the per-unit signal must be a model feature
+    assert "pid_prev_year_property_value" in p.feature_cols
+
+
+def test_per_unit_differentiation():
+    """Two known units with different prior values get different estimates."""
+    p = LandValuePredictor()
+    by_value = sorted(p._pid_latest_value.items(), key=lambda kv: kv[1])
+    assert len(by_value) > 10
+    low_pid = by_value[len(by_value) // 4][0]
+    high_pid = by_value[3 * len(by_value) // 4][0]
+
+    base = _sample(p)
+    low = p.predict({**base, "PID": low_pid}).point_estimate
+    high = p.predict({**base, "PID": high_pid}).point_estimate
+    assert high > low
 
 
 def test_prediction_is_sane():

@@ -23,6 +23,7 @@ type HealthResponse = {
  */
 type FuzzyCandidate = {
   candidate_id: number;
+  PID: string | null;
   display_address: string;
   PROPERTY_POSTAL_CODE: string;
   LEGAL_TYPE: string;
@@ -284,7 +285,7 @@ export default function FuzzyMode() {
       setLookupResult(data);
 
       if (data.match_count === 0) {
-        setStatusMessage("No property candidates were found. Try a different street name, postal code, or report year.");
+        setStatusMessage("No match found. Check the street number and name, or try the postal code. Note this only covers City of Vancouver addresses (e.g. Burnaby or Richmond aren't included).");
         return;
       }
 
@@ -350,6 +351,7 @@ export default function FuzzyMode() {
         YEAR_BUILT: selectedCandidate.YEAR_BUILT,
         BIG_IMPROVEMENT_YEAR: selectedCandidate.BIG_IMPROVEMENT_YEAR,
         REPORT_YEAR: selectedCandidate.REPORT_YEAR,
+        PID: selectedCandidate.PID,
       };
 
       const res = await fetch(`${API_BASE}/predict`, {
@@ -382,10 +384,6 @@ export default function FuzzyMode() {
       {/* Page title */}
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Search by address</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Type a Vancouver street address and we'll estimate what the land is
-          worth — no property jargon needed.
-        </p>
       </div>
 
       {/* Backend status */}
@@ -666,7 +664,7 @@ export default function FuzzyMode() {
                 disabled={!selectedCandidate || isPredicting}
                 className="h-11 w-full rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isPredicting ? "Estimating..." : "Estimate Land Value"}
+                {isPredicting ? "Estimating..." : "Estimate property value"}
               </button>
             </div>
           </div>
@@ -683,7 +681,7 @@ export default function FuzzyMode() {
               <div className="space-y-4">
                 <div>
                   <div className="text-sm text-slate-500">
-                    Estimated land value
+                    Estimated property value
                   </div>
                   <div className="mt-1 text-4xl font-semibold tracking-tight text-slate-900">
                     {formatCurrency(result.point_estimate)}
@@ -701,10 +699,11 @@ export default function FuzzyMode() {
                 </div>
 
                 <p className="text-sm text-slate-600">
-                  This is a model estimate of the land's assessed value — not a
-                  guaranteed sale price or an official appraisal. The range reflects
-                  how much similar properties in this area typically vary (about{" "}
-                  {formatCurrency(result.error_band)} either way).
+                  This is a model estimate of the total assessed property value
+                  (land plus building) — not a guaranteed sale price or an official
+                  appraisal. The range reflects how much similar properties in this
+                  area typically vary (about {formatCurrency(result.error_band)}{" "}
+                  either way).
                 </p>
 
                 <details className="text-sm text-slate-600">

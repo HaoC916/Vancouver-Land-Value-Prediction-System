@@ -22,6 +22,7 @@ DEPLOY_YEAR_LOOKUP_PATH = Path("data/deploy/predict_year_lookup.parquet")
 DEPLOY_NEIGH_LOOKUP_PATH = Path("data/deploy/predict_neigh_lookup.parquet")
 DEPLOY_FSA_LOOKUP_PATH = Path("data/deploy/predict_fsa_lookup.parquet")
 DEPLOY_GLOBAL_LOOKUP_PATH = Path("data/deploy/predict_global_lookup.parquet")
+DEPLOY_PID_LOOKUP_PATH = Path("data/deploy/predict_pid_lookup.parquet")
 
 POSTAL_CODE_PATTERN = re.compile(r"^[A-Z]\d[A-Z]\d[A-Z]\d$")
 
@@ -200,6 +201,30 @@ class LandValuePredictor:
                 ).astype("Int64")
 
         # ------------------------------------------------------------
+        # 4b. Per-PID previous-year value (drives per-unit estimates)
+        # ------------------------------------------------------------
+        # Maps a selected property's own prior assessment into the model's
+        # dominant feature. Optional: missing file -> empty maps -> graceful
+        # fallback to neighbourhood/year context for unknown properties.
+        # PID is a formatted string (e.g. "010-871-501"), so key the maps on str.
+        self._pid_year_value: dict[tuple[str, int], float] = {}
+        self._pid_latest_value: dict[str, float] = {}
+        if self.use_deploy_lookup and DEPLOY_PID_LOOKUP_PATH.exists():
+            pid_df = pd.read_parquet(DEPLOY_PID_LOOKUP_PATH).copy()
+            pid_df["PID"] = pid_df["PID"].astype(str).str.strip()
+            pid_df["REPORT_YEAR"] = pd.to_numeric(pid_df["REPORT_YEAR"], errors="coerce")
+            pid_df = pid_df.dropna(
+                subset=["REPORT_YEAR", "pid_prev_year_property_value"]
+            )
+            for p, y, v in zip(
+                pid_df["PID"], pid_df["REPORT_YEAR"], pid_df["pid_prev_year_property_value"]
+            ):
+                self._pid_year_value[(p, int(y))] = float(v)
+            latest = pid_df.sort_values("REPORT_YEAR").drop_duplicates("PID", keep="last")
+            for p, v in zip(latest["PID"], latest["pid_prev_year_property_value"]):
+                self._pid_latest_value[p] = float(v)
+
+        # ------------------------------------------------------------
         # 5. Lookup year bounds
         # ------------------------------------------------------------
         if "REPORT_YEAR" in self.lookup_df.columns:
@@ -371,6 +396,18 @@ class LandValuePredictor:
 
         report_year = int(user_input.get("REPORT_YEAR") or self.default_report_year)
 
+        # Resolve the selected property's own prior-year value (the dominant
+        # per-unit signal). Known units arrive with a PID; unknown ones leave this
+        # NaN and get filled from neighbourhood/year context below.
+        pid_prev_property_value = np.nan
+        pid_raw = user_input.get("PID")
+        if pid_raw is not None and str(pid_raw).strip():
+            pid_key = str(pid_raw).strip()
+            pid_prev_property_value = self._pid_year_value.get(
+                (pid_key, report_year),
+                self._pid_latest_value.get(pid_key, np.nan),
+            )
+
         # -----------------------------
         # Normalize user-entered values
         # -----------------------------
@@ -471,6 +508,7 @@ class LandValuePredictor:
             "BUILDING_AGE_BIN": building_age_bin,
             "IMPROVEMENT_RECENCY_BIN": imp_recency_bin,
             "LEGAL_ZONING_COMBO": legal_zoning_combo,
+            "pid_prev_year_property_value": pid_prev_property_value,
         }
 
         for k, v in direct_values.items():

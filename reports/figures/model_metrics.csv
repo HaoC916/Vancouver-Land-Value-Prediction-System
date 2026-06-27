@@ -1,2 +1,2 @@
 model,rmse,mae,median_ape,robust_rmse,robust_mae,robust_cap_p99_5,n_train,n_test,n_features_total,n_features_cat,n_features_num,model_backend,encoding_mode,target_encoding_target
-model_hist_gradient_boosting,9576337.257376257,589789.584183758,0.13920674374930928,1411543.4741652838,396102.2001371884,24533950.000000186,860843.0,664757.0,57.0,6.0,51.0,hist_gradient_boosting,b,log1p_current_land_value
+model_hist_gradient_boosting,11230907.116609544,469183.2917371072,0.06203324691743913,1059818.9187684509,198834.07132445282,31751370.00000011,860843.0,664757.0,59.0,6.0,53.0,hist_gradient_boosting,b,log1p_current_property_value
