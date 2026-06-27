@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Optional
 import re
@@ -17,11 +18,25 @@ from src.infer.predict import LandValuePredictor
 app = FastAPI(title="Land Value API")
 
 # ------------------------------------------------------------
-# 2. Enable CORS for React dev server
+# 2. Enable CORS for the React frontend
 # ------------------------------------------------------------
+# Origins are configurable via the ALLOWED_ORIGINS env var (comma-separated) so
+# the deployed backend can be locked to the real frontend without a code change.
+# When unset, we fall back to local dev + the known Vercel domain.
+_DEFAULT_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://vancouver-land-value-prediction-sys.vercel.app",
+]
+_env_origins = os.environ.get("ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS = (
+    [o.strip() for o in _env_origins.split(",") if o.strip()]
+    or _DEFAULT_ALLOWED_ORIGINS
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://vancouver-land-value-prediction-sys.vercel.app"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -480,6 +495,18 @@ def load_address_lookup_df() -> pd.DataFrame:
     df["TO_CIVIC_NUMBER_NORMALIZED"] = df["TO_CIVIC_NUMBER"].map(normalize_civic_number)
     df["STREET_NAME_NORMALIZED"] = df["STREET_NAME"].map(normalize_street_name)
 
+    # Precompute the leading integer of each civic number once, so the per-request
+    # civic-range match can run vectorized instead of a row-wise apply over the
+    # whole address lookup table.
+    df["FROM_CIVIC_NUM_INT"] = pd.to_numeric(
+        df["FROM_CIVIC_NUMBER_NORMALIZED"].str.extract(r"^(\d+)", expand=False),
+        errors="coerce",
+    )
+    df["TO_CIVIC_NUM_INT"] = pd.to_numeric(
+        df["TO_CIVIC_NUMBER_NORMALIZED"].str.extract(r"^(\d+)", expand=False),
+        errors="coerce",
+    )
+
     # Keep only rows that have at least one civic value
     df = df[
         (df["FROM_CIVIC_NUMBER_NORMALIZED"].str.len() > 0)
@@ -556,17 +583,28 @@ def fuzzy_match_address_candidates(
     street_name_norm = normalize_street_name(street_name)
     postal_norm = normalize_postal_code(property_postal_code)
 
-    # Step 1: match the user's street number against the civic range
-    working = working[
-        working.apply(
-            lambda row: civic_number_matches_range(
-                user_street_number=street_number,
-                from_civic_number=row.get("FROM_CIVIC_NUMBER"),
-                to_civic_number=row.get("TO_CIVIC_NUMBER"),
-            ),
-            axis=1,
-        )
-    ].copy()
+    # Step 1: match the user's street number against the civic range. Vectorized
+    # over the precomputed integer columns; this is equivalent to applying
+    # civic_number_matches_range() row by row, but avoids the per-request apply.
+    user_num = parse_civic_number_int(street_number)
+    if user_num is None:
+        return working.iloc[0:0].copy(), used_report_year, "none"
+
+    from_num = working["FROM_CIVIC_NUM_INT"]
+    to_num = working["TO_CIVIC_NUM_INT"]
+    has_from = from_num.notna()
+    has_to = to_num.notna()
+
+    pair = pd.concat([from_num, to_num], axis=1)
+    low = pair.min(axis=1)
+    high = pair.max(axis=1)
+
+    match_both = has_from & has_to & (low <= user_num) & (user_num <= high)
+    match_from_only = has_from & ~has_to & (from_num == user_num)
+    match_to_only = ~has_from & has_to & (to_num == user_num)
+
+    civic_mask = (match_both | match_from_only | match_to_only).fillna(False)
+    working = working[civic_mask].copy()
 
     if working.empty:
         return working, used_report_year, "none"

@@ -1,13 +1,6 @@
 import { useEffect, useState } from "react";
 
-/**
- * ------------------------------------------------------------
- * 1. Backend API base URL
- * ------------------------------------------------------------
- * React talks to FastAPI here.
- */
-//const API_BASE = "http://127.0.0.1:8000";
-const API_BASE = "https://vancouver-land-value-api.onrender.com";
+import { API_BASE } from "../config";
 
 /**
  * ------------------------------------------------------------
@@ -175,7 +168,7 @@ export default function FuzzyMode() {
         const json: HealthResponse = await res.json();
         setHealthInfo(json);
         setBackendOk(true);
-      } catch (error) {
+      } catch {
         setBackendOk(false);
       }
     }

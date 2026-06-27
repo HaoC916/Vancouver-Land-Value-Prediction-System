@@ -1,0 +1,4 @@
+# Local development + CI tooling (testing the API and predictor).
+-r requirements-api.txt
+pytest>=8,<9
+httpx>=0.27

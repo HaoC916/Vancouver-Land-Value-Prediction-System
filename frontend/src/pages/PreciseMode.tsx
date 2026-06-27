@@ -1,13 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-/**
- * ------------------------------------------------------------
- * 1. Backend API base URL
- * ------------------------------------------------------------
- * React calls FastAPI here.
- */
-//const API_BASE = "http://127.0.0.1:8000";
-const API_BASE = "https://vancouver-land-value-api.onrender.com";
+import { API_BASE } from "../config";
+
 /**
  * ------------------------------------------------------------
  * 2. Basic Types
@@ -660,7 +654,7 @@ export default function ChatEstimate() {
 
       const json: OptionsResponse = await res.json();
       return json;
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -747,7 +741,7 @@ export default function ChatEstimate() {
         setOptions(initialOptions);
 
         queueAgentMessage(buildStepPromptMessage(STEPS[0], initialOptions));
-      } catch (error) {
+      } catch {
         setBackendOk(false);
       }
     }

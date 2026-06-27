@@ -1,0 +1,16 @@
+# Keep the Docker build context small — exclude everything the API doesn't need.
+.git
+.venv
+**/__pycache__
+**/*.pyc
+**/node_modules
+frontend/dist
+frontend
+data/raw
+data/raw.zip
+data/interim
+data/processed
+final_submission_demo.ipynb
+docs
+.DS_Store
+**/.DS_Store

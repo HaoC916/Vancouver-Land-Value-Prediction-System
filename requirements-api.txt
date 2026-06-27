@@ -1,0 +1,13 @@
+# Minimal runtime for the FastAPI prediction backend.
+# Used by the Dockerfile / Hugging Face Space — no matplotlib, jupyter, or
+# streamlit are needed just to serve predictions, which keeps the image small.
+# Versions are pinned to match where the model artifact was verified to load.
+fastapi==0.135.3
+uvicorn==0.43.0
+pydantic==2.12.5
+numpy==2.4.4
+pandas==3.0.2
+scikit-learn==1.8.0
+scipy==1.17.1
+joblib==1.5.3
+pyarrow==23.0.1

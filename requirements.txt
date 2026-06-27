@@ -1,11 +1,18 @@
-numpy
-pandas
-scikit-learn
-matplotlib
+# Core scientific stack — pinned so the saved model artifact unpickles
+# consistently (the model was trained/saved with scikit-learn 1.8.0).
+numpy==2.4.4
+pandas==3.0.2
+scikit-learn==1.8.0
+scipy==1.17.1
+joblib==1.5.3
+pyarrow==23.0.1
+
+# REST API backend
+fastapi==0.135.3
+uvicorn==0.43.0
+pydantic==2.12.5
+
+# Notebook + Streamlit demo + figure generation (dev / demo only)
+matplotlib==3.10.8
+streamlit==1.56.0
 jupyter
-joblib
-streamlit
-fastapi
-uvicorn
-pydantic
-pyarrow
