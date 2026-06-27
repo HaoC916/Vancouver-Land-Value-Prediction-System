@@ -32,6 +32,9 @@ def main() -> None:
         usecols=lambda c: c in KEEP_COLS,
     ).copy()
 
+    df["REPORT_YEAR"] = pd.to_numeric(df["REPORT_YEAR"], errors="coerce")
+    df = df[(df["REPORT_YEAR"] >= 2024) & (df["REPORT_YEAR"] <= 2026)].copy()
+
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(OUTPUT_PATH, index=False)
 
