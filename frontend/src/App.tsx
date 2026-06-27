@@ -84,14 +84,14 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right side: tab buttons — address-first, with the technical
-              field-by-field flow kept as an "advanced" option. */}
+          {/* Right side: tab buttons — both address-driven: a form view and a
+              conversational chat view of the same estimate. */}
           <nav className="flex items-center gap-2">
             <button className={tabClass(page === "fuzzy")} onClick={() => setPage("fuzzy")}>
               Search by address
             </button>
             <button className={tabClass(page === "precise")} onClick={() => setPage("precise")}>
-              Advanced
+              Chat
             </button>
           </nav>
         </div>

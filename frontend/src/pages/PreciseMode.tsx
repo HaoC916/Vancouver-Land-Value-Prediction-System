@@ -2,38 +2,31 @@ import { useEffect, useRef, useState } from "react";
 
 import { API_BASE } from "../config";
 
-/**
- * ------------------------------------------------------------
- * 2. Basic Types
- * ------------------------------------------------------------
- */
-
-/**
- * One chat bubble message.
- */
 type Msg = {
   role: "user" | "agent";
   text: string;
 };
 
-/**
- * Current collected property profile.
- * These fields should match the backend PredictRequest.
- */
-type Profile = {
+type FuzzyCandidate = {
+  candidate_id: number;
+  PID: string | null;
+  display_address: string;
   PROPERTY_POSTAL_CODE: string;
   LEGAL_TYPE: string;
   ZONING_DISTRICT: string;
   ZONING_CLASSIFICATION: string;
   NEIGHBOURHOOD_CODE: string;
-  YEAR_BUILT: number | "";
-  BIG_IMPROVEMENT_YEAR: number | "";
-  REPORT_YEAR: number | "";
+  YEAR_BUILT: number | null;
+  BIG_IMPROVEMENT_YEAR: number | null;
+  REPORT_YEAR: number;
 };
 
-/**
- * Prediction result returned by backend /predict.
- */
+type FuzzyLookupResponse = {
+  match_count: number;
+  auto_selected: boolean;
+  candidates: FuzzyCandidate[];
+};
+
 type PredictResult = {
   point_estimate: number;
   lower_bound: number;
@@ -43,947 +36,227 @@ type PredictResult = {
   used_features: Record<string, unknown>;
 };
 
-/**
- * Health response returned by backend /health.
- */
-type HealthResponse = {
-  ok: boolean;
-  default_report_year: number;
-  min_report_year: number;
-  max_report_year: number;
-};
+type Phase = "address" | "choose" | "result";
 
-/**
- * Options response returned by backend /options.
- * These options are already filtered by backend context.
- */
-type OptionsResponse = {
-  LEGAL_TYPE: string[];
-  ZONING_DISTRICT: string[];
-  ZONING_CLASSIFICATION: string[];
-  NEIGHBOURHOOD_CODE: string[];
-  context_row_count: number;
-  default_report_year: number;
-  min_report_year: number;
-  max_report_year: number;
-};
-
-/**
- * One guided step definition.
- */
-type Step = {
-  field: keyof Profile;
-  label: string;
-  kind: "text" | "number" | "option";
-  required: boolean;
-  placeholder: string;
-  prompt: string;
-  helpText: string;
-};
-
-/**
- * ------------------------------------------------------------
- * 3. Static Data
- * ------------------------------------------------------------
- */
-
-const emptyProfile: Profile = {
-  PROPERTY_POSTAL_CODE: "",
-  LEGAL_TYPE: "",
-  ZONING_DISTRICT: "",
-  ZONING_CLASSIFICATION: "",
-  NEIGHBOURHOOD_CODE: "",
-  YEAR_BUILT: "",
-  BIG_IMPROVEMENT_YEAR: "",
-  REPORT_YEAR: "",
-};
-
-const REQUIRED_FIELDS: (keyof Profile)[] = [
-  "PROPERTY_POSTAL_CODE",
-  "LEGAL_TYPE",
-  "ZONING_DISTRICT",
-  "ZONING_CLASSIFICATION",
-  "NEIGHBOURHOOD_CODE",
-  "YEAR_BUILT",
-];
-
-const FIELD_LABELS: Record<keyof Profile, string> = {
-  PROPERTY_POSTAL_CODE: "Postal Code",
-  LEGAL_TYPE: "Legal Type",
-  ZONING_DISTRICT: "Zoning District",
-  ZONING_CLASSIFICATION: "Zoning Classification",
-  NEIGHBOURHOOD_CODE: "Neighbourhood Code",
-  YEAR_BUILT: "Year Built",
-  BIG_IMPROVEMENT_YEAR: "Big Improvement Year",
-  REPORT_YEAR: "Report Year",
-};
-
-const STEPS: Step[] = [
-  {
-    field: "PROPERTY_POSTAL_CODE",
-    label: "Postal Code",
-    kind: "text",
-    required: true,
-    placeholder: "Example: V6B1A1",
-    prompt: "Step 1 of 8 — Please enter the property postal code.",
-    helpText: "Use a valid Canadian postal code, for example: V6B1A1",
-  },
-  {
-    field: "LEGAL_TYPE",
-    label: "Legal Type",
-    kind: "option",
-    required: true,
-    placeholder: "Type one of the suggested legal types",
-    prompt: "Step 2 of 8 — Please choose the legal type.",
-    helpText: "This list is now filtered by the context collected so far.",
-  },
-  {
-    field: "ZONING_DISTRICT",
-    label: "Zoning District",
-    kind: "option",
-    required: true,
-    placeholder: "Type one of the suggested zoning districts",
-    prompt: "Step 3 of 8 — Please choose the zoning district.",
-    helpText: "This list is filtered by postal code / context when possible.",
-  },
-  {
-    field: "ZONING_CLASSIFICATION",
-    label: "Zoning Classification",
-    kind: "option",
-    required: true,
-    placeholder: "Type one of the suggested zoning classifications",
-    prompt: "Step 4 of 8 — Please choose the zoning classification.",
-    helpText: "This list is filtered by earlier selections when possible.",
-  },
-  {
-    field: "NEIGHBOURHOOD_CODE",
-    label: "Neighbourhood Code",
-    kind: "option",
-    required: true,
-    placeholder: "Type one of the suggested neighbourhood codes",
-    prompt: "Step 5 of 8 — Please choose the neighbourhood code.",
-    helpText: "This list is filtered by postal / zoning context when possible.",
-  },
-  {
-    field: "YEAR_BUILT",
-    label: "Year Built",
-    kind: "number",
-    required: true,
-    placeholder: "Example: 1990",
-    prompt: "Step 6 of 8 — Please enter the year built.",
-    helpText:
-      "Year Built should be realistic and should not be later than the selected report year.",
-  },
-  {
-    field: "REPORT_YEAR",
-    label: "Report Year (Optional)",
-    kind: "number",
-    required: false,
-    placeholder: "Example: 2026 or type skip",
-    prompt: "Step 7 of 8 — Report Year is optional. Enter a year, or type skip.",
-    helpText:
-      "Report Year should stay inside the available model years.",
-  },
-  {
-    field: "BIG_IMPROVEMENT_YEAR",
-    label: "Big Improvement Year (Optional)",
-    kind: "number",
-    required: false,
-    placeholder: "Example: 2015 or type skip",
-    prompt:
-      "Step 8 of 8 — Big Improvement Year is optional. Enter a year, or type skip.",
-    helpText: "If there is no major improvement year, type skip.",
-  },
-];
-
-/**
- * ------------------------------------------------------------
- * 4. Helper Functions
- * ------------------------------------------------------------
- */
-
-/**
- * Format money without decimals.
- */
-function formatCurrency(value: number): string {
+function formatCurrency(n: number): string {
   return new Intl.NumberFormat("en-CA", {
     style: "currency",
     currency: "CAD",
     maximumFractionDigits: 0,
-  }).format(value);
+  }).format(n);
 }
 
-/**
- * Check whether a value should be treated as filled.
- */
-function hasValue(value: unknown): boolean {
-  return value !== "" && value !== null && value !== undefined;
+function normalizePostalCode(value: string): string {
+  return value.trim().toUpperCase().replace(/[\s-]/g, "");
 }
 
-/**
- * Find missing required fields.
- */
-function getMissingFields(profile: Profile): string[] {
-  return REQUIRED_FIELDS.filter((field) => !hasValue(profile[field])).map(
-    (field) => FIELD_LABELS[field]
-  );
+function valueOrDash(value: unknown): string {
+  return value === null || value === undefined || value === "" ? "—" : String(value);
 }
 
-/**
- * Normalize free text for matching / comparison.
- */
-function normalizeText(value: string): string {
-  return value.trim().replace(/\s+/g, " ").toLowerCase();
-}
+const GREETING =
+  "Hi! Tell me a Vancouver street address and I'll estimate its property value.\n\n" +
+  "For example: 1128 Hastings St W. You can add a postal code too, e.g. 1128 Hastings St W, V6E 4R5.";
 
-/**
- * Normalize Canadian postal code:
- * - uppercase
- * - remove spaces / dashes
- */
-function normalizePostalCode(raw: string): string | null {
-  const match = raw.match(/\b([A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d)\b/);
-  if (!match) return null;
-  return match[1].replace(/\s|-/g, "").toUpperCase();
-}
-
-/**
- * Match user input to one valid option.
- *
- * Matching rules:
- * 1. exact match
- * 2. unique prefix match
- *
- * Example:
- * - "land" can match "LAND"
- * - "ha" can match "HA-2" only if it is the unique prefix match
- */
-function matchOption(input: string, options: string[]): string | null {
-  const normalizedInput = normalizeText(input);
-
-  const exact = options.find((opt) => normalizeText(opt) === normalizedInput);
-  if (exact) return exact;
-
-  const prefixMatches = options.filter((opt) =>
-    normalizeText(opt).startsWith(normalizedInput)
-  );
-  if (prefixMatches.length === 1) return prefixMatches[0];
-
-  return null;
-}
-
-/**
- * Read filtered options for one field from backend response.
- */
-function getOptionsForField(
-  field: keyof Profile,
-  options: OptionsResponse | null
-): string[] {
-  if (!options) return [];
-
-  switch (field) {
-    case "LEGAL_TYPE":
-      return options.LEGAL_TYPE;
-    case "ZONING_DISTRICT":
-      return options.ZONING_DISTRICT;
-    case "ZONING_CLASSIFICATION":
-      return options.ZONING_CLASSIFICATION;
-    case "NEIGHBOURHOOD_CODE":
-      return options.NEIGHBOURHOOD_CODE;
-    default:
-      return [];
-  }
-}
-
-/**
- * Build query params for backend /options
- * using the currently known profile context.
- */
-function buildOptionsQuery(profile: Profile): string {
-  const params = new URLSearchParams();
-
-  if (profile.PROPERTY_POSTAL_CODE) {
-    params.set("property_postal_code", profile.PROPERTY_POSTAL_CODE);
-  }
-  if (profile.LEGAL_TYPE) {
-    params.set("legal_type", profile.LEGAL_TYPE);
-  }
-  if (profile.ZONING_DISTRICT) {
-    params.set("zoning_district", profile.ZONING_DISTRICT);
-  }
-  if (profile.ZONING_CLASSIFICATION) {
-    params.set("zoning_classification", profile.ZONING_CLASSIFICATION);
-  }
-  if (profile.NEIGHBOURHOOD_CODE) {
-    params.set("neighbourhood_code", profile.NEIGHBOURHOOD_CODE);
-  }
-  if (hasValue(profile.REPORT_YEAR)) {
-    params.set("report_year", String(profile.REPORT_YEAR));
-  }
-
-  return params.toString();
-}
-
-/**
- * Build the chat prompt for the current step.
- *
- * IMPORTANT DESIGN CHOICE:
- * - The chat remains the only interaction area.
- * - Filtered options are injected directly into the chat prompt.
- */
-function buildStepPromptMessage(
-  step: Step,
-  options: OptionsResponse | null
-): string {
-  let text = step.prompt;
-
-  // Non-option steps keep the regular help text
-  if (step.kind !== "option") {
-    text += `\n\nHint: ${step.helpText}`;
-  }
-
-  // Option steps only show the filtered option hint
-  if (step.kind === "option") {
-    const filteredOptions = getOptionsForField(step.field, options);
-
-    if (filteredOptions.length === 0) {
-      text +=
-        "\n\nHint: I do not have filtered options yet. Please type a value manually, or check earlier fields.";
-    } else if (filteredOptions.length === 1) {
-      text += `\n\nHint: The filtered ${step.label.toLowerCase()} is: ${filteredOptions[0]}.`;
-    } else {
-      const previewCount = 8;
-      const shown = filteredOptions.slice(0, previewCount);
-      const remaining = filteredOptions.length - shown.length;
-
-      text += `\n\nHint: The available ${step.label.toLowerCase()} options are: ${shown.join(", ")}`;
-
-      if (remaining > 0) {
-        text += `, and ${remaining} more`;
-      }
-
-      text += ".";
-    }
-
-    text += "\n\nPlease type one of the suggested options.";
-  }
-
-  // Optional steps support skip
-  if (!step.required) {
-    text += "\n\nYou can also type: skip";
-  }
-
-  return text;
-}
-
-/**
- * Validate one step input.
- *
- * Validation rules:
- * - report year must stay inside backend-supported year bounds
- * - year built cannot be after report year
- * - big improvement year cannot be after report year
- * - categorical fields must match filtered options
- *
- * NOTE:
- * when REPORT_YEAR is still empty we use maxReportYear
- * as the upper fallback for related year checks.
- */
-function validateStepInput(
-  step: Step,
-  raw: string,
-  options: OptionsResponse | null,
-  profile: Profile,
-  maxReportYear: number,
-  minReportYear: number
-): { ok: true; value: string | number | "" } | { ok: false; message: string } {
-  const text = raw.trim();
-
-  // Optional steps support "skip"
-  if (!step.required && /^skip$/i.test(text)) {
-    return { ok: true, value: "" };
-  }
-
-  // Postal code validation
-  if (step.field === "PROPERTY_POSTAL_CODE") {
-    const postal = normalizePostalCode(text);
-    if (!postal) {
-      return {
-        ok: false,
-        message:
-          "That doesn't look like a valid Canadian postal code. Try something like: V6B1A1",
-      };
-    }
-    return { ok: true, value: postal };
-  }
-
-  // Option validation
-  if (step.kind === "option") {
-    const validOptions = getOptionsForField(step.field, options);
-
-    if (validOptions.length === 0) {
-      return {
-        ok: false,
-        message:
-          "There are no filtered options available right now. Please check earlier fields or try again.",
-      };
-    }
-
-    const matched = matchOption(text, validOptions);
-    if (!matched) {
-      return {
-        ok: false,
-        message:
-          `I couldn't match that to a valid ${step.label}. ` +
-          `Please type one of the suggested options from the latest chat hint.`,
-      };
-    }
-
-    return { ok: true, value: matched };
-  }
-
-  // Number validation
-  if (step.kind === "number") {
-    const year = Number(text);
-
-    if (!Number.isInteger(year)) {
-      return {
-        ok: false,
-        message: `${step.label} should be a 4-digit year, for example 1990.`,
-      };
-    }
-
-    // YEAR_BUILT
-    if (step.field === "YEAR_BUILT") {
-      const targetReportYear = hasValue(profile.REPORT_YEAR)
-        ? Number(profile.REPORT_YEAR)
-        : maxReportYear;
-
-      if (year < 1800 || year > targetReportYear) {
-        return {
-          ok: false,
-          message: `Year Built should be between 1800 and ${targetReportYear}.`,
-        };
-      }
-
-      return { ok: true, value: year };
-    }
-
-    // REPORT_YEAR
-    if (step.field === "REPORT_YEAR") {
-      if (year < minReportYear || year > maxReportYear) {
-        return {
-          ok: false,
-          message:
-            `Report Year should stay between ${minReportYear} and ${maxReportYear}.`,
-        };
-      }
-
-      if (hasValue(profile.YEAR_BUILT) && year < Number(profile.YEAR_BUILT)) {
-        return {
-          ok: false,
-          message:
-            `Report Year cannot be earlier than Year Built (${profile.YEAR_BUILT}).`,
-        };
-      }
-
-      return { ok: true, value: year };
-    }
-
-    // BIG_IMPROVEMENT_YEAR
-    if (step.field === "BIG_IMPROVEMENT_YEAR") {
-      const targetReportYear = hasValue(profile.REPORT_YEAR)
-        ? Number(profile.REPORT_YEAR)
-        : maxReportYear;
-
-      if (year < 1800 || year > targetReportYear) {
-        return {
-          ok: false,
-          message:
-            `Big Improvement Year should be between 1800 and ${targetReportYear}.`,
-        };
-      }
-
-      if (hasValue(profile.YEAR_BUILT) && year < Number(profile.YEAR_BUILT)) {
-        return {
-          ok: false,
-          message:
-            `Big Improvement Year should not be earlier than Year Built (${profile.YEAR_BUILT}).`,
-        };
-      }
-
-      return { ok: true, value: year };
-    }
-  }
-
-  if (!text) {
-    return {
-      ok: false,
-      message: `${step.label} cannot be empty.`,
-    };
-  }
-
-  return { ok: true, value: text };
-}
-
-/**
- * ------------------------------------------------------------
- * 5. Main Component
- * ------------------------------------------------------------
- */
-export default function ChatEstimate() {
-  /**
-   * Chat history.
-   *
-   */
-  const [messages, setMessages] = useState<Msg[]>([
-    {
-      role: "agent",
-      text:
-        "Hi!  I'm Web CRaWLer AI :)\n" +
-        "I'll guide you step by step and show filtered suggestions directly inside the conversation.",
-    },
-  ]);
-
-  /**
-   * Current input text
-   */
+export default function PreciseMode() {
+  const [messages, setMessages] = useState<Msg[]>([{ role: "agent", text: GREETING }]);
   const [input, setInput] = useState("");
-
-  /**
-   * Current collected profile
-   */
-  const [profile, setProfile] = useState<Profile>(emptyProfile);
-
-  /**
-   * Latest prediction result
-   */
+  const [phase, setPhase] = useState<Phase>("address");
+  const [candidates, setCandidates] = useState<FuzzyCandidate[]>([]);
+  const [selected, setSelected] = useState<FuzzyCandidate | null>(null);
   const [result, setResult] = useState<PredictResult | null>(null);
-
-  /**
-   * Backend connection status
-   */
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
-
-  /**
-   * Backend health metadata
-   */
-  const [healthInfo, setHealthInfo] = useState<HealthResponse | null>(null);
-
-  /**
-   * Current filtered options from backend
-   */
-  const [options, setOptions] = useState<OptionsResponse | null>(null);
-
-  /**
-   * Current step index in the guided flow
-   */
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
-
-  /**
-   * Whether prediction request is running
-   */
-  const [isPredicting, setIsPredicting] = useState(false);
-
-  /**
-   * Typewriter timer
-   */
-  const typingTimerRef = useRef<number | null>(null);
-
-  /**
-   * Bottom target for scrolling
-   */
+  const [isBusy, setIsBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  /**
-   * Queue of pending agent messages.
-   * to avoid if we start a new agent message the old one gets cut off,
-   * before the previous one has finished typing, 
-   *
-   * The queue guarantees:
-   * - messages are typed one by one
-   * - no truncated first prompt
-   * - no duplicated / interrupted prompt sequence
-   */
-  const pendingAgentMessagesRef = useRef<string[]>([]);
-
-  /**
-   * Whether an agent message is currently animating.
-   */
-  const isAnimatingRef = useRef(false);
-
-  /**
-   * Guard against React StrictMode double-running the first effect in development.
-   *
-   * Without this, the initial boot flow may run twice,
-   * which causes the first prompt to appear partially, then restart.
-   */
-  const hasBootedRef = useRef(false);
-
-  /**
-   * Current step object
-   */
-  const currentStep =
-    currentStepIndex < STEPS.length ? STEPS[currentStepIndex] : null;
-
-  /**
-   * Auto-scroll on message changes.
-   */
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  /**
-   * Fetch filtered options for a given profile context.
-   *
-   * This asks the backend:
-   * "Given what the user has already entered,
-   * what are the filtered candidate options now?"
-   */
-  async function fetchOptionsForProfile(
-    targetProfile: Profile
-  ): Promise<OptionsResponse | null> {
-    try {
-      const query = buildOptionsQuery(targetProfile);
-      const url = query ? `${API_BASE}/options?${query}` : `${API_BASE}/options`;
-
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error("Options request failed");
-      }
-
-      const json: OptionsResponse = await res.json();
-      return json;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Start typing the next queued agent message.
-   *
-   * If no queued message exists, stop.
-   */
-  function playNextAgentMessage() {
-    // If already animating, do nothing.
-    if (isAnimatingRef.current) return;
-
-    const nextText = pendingAgentMessagesRef.current.shift();
-    if (!nextText) return;
-
-    isAnimatingRef.current = true;
-
-    let agentIndex = -1;
-
-    // Insert a new empty agent bubble
-    setMessages((prev) => {
-      agentIndex = prev.length;
-      return [...prev, { role: "agent", text: "" }];
-    });
-
-    let i = 0;
-
-    typingTimerRef.current = window.setInterval(() => {
-      i++;
-
-      setMessages((prev) => {
-        if (agentIndex < 0 || agentIndex >= prev.length) return prev;
-
-        const next = [...prev];
-        next[agentIndex] = {
-          ...next[agentIndex],
-          text: nextText.slice(0, i),
-        };
-        return next;
-      });
-
-      if (i >= nextText.length && typingTimerRef.current !== null) {
-        window.clearInterval(typingTimerRef.current);
-        typingTimerRef.current = null;
-        isAnimatingRef.current = false;
-
-        // Automatically continue to the next queued agent message
-        playNextAgentMessage();
-      }
-    }, 10);
-  }
-
-  /**
-   * Queue one full agent message.
-   *
-   */
-  function queueAgentMessage(text: string) {
-    pendingAgentMessagesRef.current.push(text);
-    playNextAgentMessage();
-  }
-
-  /**
-   * Initial boot:
-   * - fetch backend health
-   * - do NOT prefill REPORT_YEAR into the visible profile
-   * - fetch first-step options using the empty profile
-   * - start the first chat prompt
-   */
-  useEffect(() => {
-    async function boot() {
+    async function loadHealth() {
       try {
-        const healthRes = await fetch(`${API_BASE}/health`);
-        if (!healthRes.ok) throw new Error("Health request failed");
-
-        const healthJson: HealthResponse = await healthRes.json();
-        setHealthInfo(healthJson);
+        const res = await fetch(`${API_BASE}/health`);
+        if (!res.ok) throw new Error("health failed");
+        await res.json();
         setBackendOk(true);
-
-        const initialProfile: Profile = { ...emptyProfile };
-        setProfile(initialProfile);
-
-        const initialOptions = await fetchOptionsForProfile(initialProfile);
-        setOptions(initialOptions);
-
-        queueAgentMessage(buildStepPromptMessage(STEPS[0], initialOptions));
       } catch {
         setBackendOk(false);
       }
     }
-
-    // Prevent duplicate boot in React StrictMode development mode
-    if (hasBootedRef.current) return;
-    hasBootedRef.current = true;
-
-    boot();
+    loadHealth();
   }, []);
 
-  /**
-   * Call backend /predict
-   */
-  async function runPrediction(currentProfile: Profile) {
-    setIsPredicting(true);
-    setResult(null);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, candidates]);
 
-    const payload = {
-      PROPERTY_POSTAL_CODE: currentProfile.PROPERTY_POSTAL_CODE,
-      LEGAL_TYPE: currentProfile.LEGAL_TYPE,
-      ZONING_DISTRICT: currentProfile.ZONING_DISTRICT,
-      ZONING_CLASSIFICATION: currentProfile.ZONING_CLASSIFICATION,
-      NEIGHBOURHOOD_CODE: currentProfile.NEIGHBOURHOOD_CODE,
-      YEAR_BUILT: Number(currentProfile.YEAR_BUILT),
-      BIG_IMPROVEMENT_YEAR: hasValue(currentProfile.BIG_IMPROVEMENT_YEAR)
-        ? Number(currentProfile.BIG_IMPROVEMENT_YEAR)
-        : null,
-      REPORT_YEAR: hasValue(currentProfile.REPORT_YEAR)
-        ? Number(currentProfile.REPORT_YEAR)
-        : null,
-    };
-
-    try {
-      const res = await fetch(`${API_BASE}/predict`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(errorText || "Prediction failed");
-      }
-
-      const data: PredictResult = await res.json();
-      setResult(data);
-
-      queueAgentMessage(
-        `Done. I estimated the assessed property value at ${formatCurrency(
-          data.point_estimate
-        )}.\n\n` +
-          `Estimated range: ${formatCurrency(data.lower_bound)} to ${formatCurrency(
-            data.upper_bound
-          )}.\n\n` +
-          `Error band source: ${data.error_band_source}.`
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown prediction error";
-      queueAgentMessage(`Prediction failed: ${message}`);
-    } finally {
-      setIsPredicting(false);
-    }
+  function addMsg(role: "user" | "agent", text: string) {
+    setMessages((prev) => [...prev, { role, text }]);
   }
 
-  /**
-   * Process one user message.
-   *
-   * Flow:
-   * 1. Show the user bubble
-   * 2. Handle reset / estimate
-   * 3. Validate input for current step
-   * 4. Save value into profile
-   * 5. Fetch filtered options for the next step
-   * 6. Queue the next prompt into the chat
-   */
-  async function processUserMessage(rawValue: string) {
-    const raw = rawValue.trim();
-    if (!raw) return;
+  function resetConversation() {
+    setPhase("address");
+    setCandidates([]);
+    setSelected(null);
+    setResult(null);
+    setInput("");
+    setMessages([{ role: "agent", text: GREETING }]);
+  }
 
-    // Show user bubble first
-    setMessages((prev) => [...prev, { role: "user", text: raw }]);
-
-    // reset command
-    if (/^reset$/i.test(raw)) {
-      const resetProfile: Profile = { ...emptyProfile };
-
-      setProfile(resetProfile);
-      setResult(null);
-      setCurrentStepIndex(0);
-
-      const resetOptions = await fetchOptionsForProfile(resetProfile);
-      setOptions(resetOptions);
-
-      queueAgentMessage("All fields have been cleared. Let's start again.");
-      queueAgentMessage(buildStepPromptMessage(STEPS[0], resetOptions));
+  async function lookupAddress(text: string) {
+    // "1050 26TH AVE W, V6H 2A5" -> street number, street name, optional postal
+    const [addrPart, postalPart] = text.split(",");
+    const addr = (addrPart || "").trim();
+    const match = addr.match(/^(\d+[A-Za-z]?)\s+(.+)$/);
+    if (!match) {
+      addMsg(
+        "agent",
+        "Start with the street number, then the street name — e.g. 1128 Hastings St W."
+      );
       return;
     }
+    const streetNumber = match[1];
+    const streetName = match[2].trim();
+    const postal = postalPart ? normalizePostalCode(postalPart) : "";
 
-    // estimate command
-    if (/^estimate$/i.test(raw)) {
-      const missing = getMissingFields(profile);
+    setIsBusy(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("street_number", streetNumber);
+      params.set("street_name", streetName);
+      if (postal) params.set("property_postal_code", postal);
+      params.set("limit", "20");
 
-      if (missing.length > 0) {
-        queueAgentMessage(
-          "I'm not ready to estimate yet. I still need:\n- " +
-            missing.join("\n- ")
+      const res = await fetch(`${API_BASE}/fuzzy_lookup?${params.toString()}`);
+      if (!res.ok) throw new Error(await res.text());
+      const data: FuzzyLookupResponse = await res.json();
+
+      if (data.match_count === 0) {
+        setCandidates([]);
+        setPhase("address");
+        addMsg(
+          "agent",
+          "I couldn't find that address. Check the street number and name, or add a postal code. Note this only covers City of Vancouver addresses (Burnaby, Richmond, etc. aren't included)."
         );
         return;
       }
-
-      await runPrediction(profile);
-      return;
-    }
-
-    // all steps already completed
-    if (!currentStep) {
-      queueAgentMessage(
-        "All steps have already been completed.\n\n" +
-          "Type `estimate` to run prediction, or `reset` to start over."
+      if (data.auto_selected && data.candidates.length === 1) {
+        setCandidates([]);
+        await estimate(data.candidates[0]);
+        return;
+      }
+      setCandidates(data.candidates);
+      setPhase("choose");
+      addMsg(
+        "agent",
+        `I found ${data.match_count} properties at this address — which one? Tap a unit below, or reply with its number.`
       );
-      return;
-    }
-
-    // validate current step
-    const validation = validateStepInput(
-      currentStep,
-      raw,
-      options,
-      profile,
-      healthInfo?.max_report_year ?? 2026,
-      healthInfo?.min_report_year ?? 2020
-    );
-
-    if (!validation.ok) {
-      queueAgentMessage(validation.message);
-      return;
-    }
-
-    // save current value
-    const nextProfile: Profile = {
-      ...profile,
-      [currentStep.field]: validation.value as never,
-    };
-
-    setProfile(nextProfile);
-    setResult(null);
-
-    const savedValue =
-      validation.value === "" ? "Skipped" : String(validation.value);
-
-    queueAgentMessage(`Saved ${currentStep.label} = ${savedValue}`);
-
-    // move to next step
-    if (currentStepIndex < STEPS.length - 1) {
-      const nextStepIndex = currentStepIndex + 1;
-      const nextOptions = await fetchOptionsForProfile(nextProfile);
-
-      setOptions(nextOptions);
-      setCurrentStepIndex(nextStepIndex);
-
-      queueAgentMessage(buildStepPromptMessage(STEPS[nextStepIndex], nextOptions));
-    } else {
-      // all steps completed
-      const finalOptions = await fetchOptionsForProfile(nextProfile);
-      setOptions(finalOptions);
-      setCurrentStepIndex(STEPS.length);
-
-      queueAgentMessage(
-        "All steps are complete. Type `estimate` when you are ready."
-      );
+    } catch (e) {
+      addMsg("agent", `Lookup failed: ${e instanceof Error ? e.message : "unknown error"}`);
+    } finally {
+      setIsBusy(false);
     }
   }
 
-  /**
-   * Send from the chat input box.
-   */
+  async function estimate(candidate: FuzzyCandidate) {
+    setSelected(candidate);
+    setCandidates([]);
+    setResult(null);
+    addMsg("agent", `Got it — ${candidate.display_address}. Estimating…`);
+
+    setIsBusy(true);
+    try {
+      const payload = {
+        PROPERTY_POSTAL_CODE: candidate.PROPERTY_POSTAL_CODE,
+        LEGAL_TYPE: candidate.LEGAL_TYPE,
+        ZONING_DISTRICT: candidate.ZONING_DISTRICT,
+        ZONING_CLASSIFICATION: candidate.ZONING_CLASSIFICATION,
+        NEIGHBOURHOOD_CODE: candidate.NEIGHBOURHOOD_CODE,
+        YEAR_BUILT: candidate.YEAR_BUILT,
+        BIG_IMPROVEMENT_YEAR: candidate.BIG_IMPROVEMENT_YEAR,
+        REPORT_YEAR: candidate.REPORT_YEAR,
+        PID: candidate.PID,
+      };
+      const res = await fetch(`${API_BASE}/predict`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data: PredictResult = await res.json();
+      setResult(data);
+      setPhase("result");
+      addMsg(
+        "agent",
+        `Estimated property value: ${formatCurrency(data.point_estimate)} ` +
+          `(likely ${formatCurrency(data.lower_bound)} – ${formatCurrency(data.upper_bound)}).\n\n` +
+          "That's the total assessed value, land plus building. Want another address? Just type it."
+      );
+    } catch (e) {
+      setPhase("address");
+      addMsg("agent", `Prediction failed: ${e instanceof Error ? e.message : "unknown error"}`);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function handleSend() {
     const raw = input.trim();
-    if (!raw) return;
-
+    if (!raw || isBusy) return;
     setInput("");
-    await processUserMessage(raw);
+    addMsg("user", raw);
+
+    const cmd = raw.toLowerCase();
+    if (cmd === "reset" || cmd === "restart" || cmd === "start over") {
+      resetConversation();
+      return;
+    }
+    if (cmd === "back") {
+      if (phase === "choose") {
+        setCandidates([]);
+        setPhase("address");
+        addMsg("agent", "Sure — what's the address?");
+      } else {
+        addMsg("agent", "Type a Vancouver street address to get started.");
+      }
+      return;
+    }
+
+    if (phase === "choose") {
+      const n = Number(raw);
+      if (Number.isInteger(n) && n >= 1 && n <= candidates.length) {
+        await estimate(candidates[n - 1]);
+        return;
+      }
+      // not a valid number — treat as a fresh address search
+      await lookupAddress(raw);
+      return;
+    }
+
+    // address / result phase: treat the message as an address
+    await lookupAddress(raw);
   }
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Precise Mode</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Chat</h1>
       </div>
 
-      {/* Backend Status */}
       <div className="flex items-center justify-between">
         <div className="text-sm text-slate-600">
           Backend status:{" "}
           <span className="font-medium">
-            {backendOk === null
-              ? "Checking..."
-              : backendOk
-              ? "Connected"
-              : "Offline"}
+            {backendOk === null ? "Checking..." : backendOk ? "Connected" : "Offline"}
           </span>
         </div>
-
         <div className="text-xs text-slate-500">API: {API_BASE}</div>
       </div>
 
-      {/* Two-column Layout */}
       <div className="grid gap-6 lg:grid-cols-[1.25fr_0.95fr]">
-        {/* Left: Chat only */}
+        {/* Left: chat */}
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          {/* Chat Header */}
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="text-sm font-semibold">Chat Window</div>
           </div>
 
-          {/* Current Step Banner */}
-          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-            {currentStep ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-slate-800">
-                  Current Step: {currentStep.label}
-                  {!currentStep.required && (
-                    <span className="ml-2 text-xs font-normal text-slate-500">
-                      (Optional)
-                    </span>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-slate-700">
-                All steps completed. Type <span className="font-medium">estimate</span> to run
-                prediction, or <span className="font-medium">reset</span> to start over.
-              </div>
-            )}
-          </div>
-
-          {/* Messages Area */}
           <div className="h-[520px] overflow-y-auto overflow-x-hidden bg-slate-50 px-4 py-4">
             <div className="flex flex-col gap-3">
               {messages.map((m, idx) => (
@@ -1000,35 +273,49 @@ export default function ChatEstimate() {
                   {m.text}
                 </div>
               ))}
+
+              {phase === "choose" && candidates.length > 0 && (
+                <div className="mr-auto flex max-w-[90%] flex-col gap-2">
+                  {candidates.map((c, idx) => (
+                    <button
+                      key={c.candidate_id}
+                      onClick={() => estimate(c)}
+                      disabled={isBusy}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <span className="mr-2 text-slate-400">{idx + 1}.</span>
+                      <span className="font-medium text-slate-900">{c.display_address}</span>
+                      <span className="ml-1 text-slate-500">
+                        · {c.LEGAL_TYPE} · built {valueOrDash(c.YEAR_BUILT)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div ref={bottomRef} />
             </div>
           </div>
 
-          {/* Chat Input */}
           <div className="border-t border-slate-200 p-3 space-y-2">
             <div className="text-xs text-slate-500">
-              Useful commands:{" "}
-              <span className="font-medium">estimate</span>,{" "}
-              <span className="font-medium">reset</span>,{" "}
-              <span className="font-medium">skip</span> (for optional steps).
+              Type an address, or <span className="font-medium">reset</span> to start over.
+              When choosing a unit you can also type <span className="font-medium">back</span>.
             </div>
-
             <div className="flex items-center gap-2">
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={currentStep ? currentStep.placeholder : "Type estimate or reset"}
+                placeholder="Example: 1128 Hastings St W"
                 className="h-11 w-full min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handleSend();
-                  }
+                  if (e.key === "Enter") handleSend();
                 }}
-                disabled={isPredicting}
+                disabled={isBusy}
               />
               <button
                 onClick={handleSend}
-                disabled={isPredicting}
+                disabled={isBusy}
                 className="h-11 shrink-0 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Send
@@ -1037,83 +324,86 @@ export default function ChatEstimate() {
           </div>
         </div>
 
-        {/* Right: Profile + Result */}
+        {/* Right: what we found + result */}
         <div className="space-y-4">
-          {/* Current Profile */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4">
-              <h2 className="text-lg font-semibold">Property Profile</h2>
+              <h2 className="text-lg font-semibold">What we found</h2>
             </div>
 
             <div className="space-y-3 text-sm">
-              {(Object.keys(profile) as (keyof Profile)[]).map((key) => (
+              {[
+                ["Address", selected?.display_address],
+                ["Postal code", selected?.PROPERTY_POSTAL_CODE],
+                ["Property type", selected?.LEGAL_TYPE],
+                ["Zoning", selected?.ZONING_DISTRICT],
+                ["Neighbourhood", selected?.NEIGHBOURHOOD_CODE],
+                ["Year built", selected?.YEAR_BUILT],
+                ["Last major improvement", selected?.BIG_IMPROVEMENT_YEAR],
+                ["Assessment year", selected?.REPORT_YEAR],
+              ].map(([label, value]) => (
                 <div
-                  key={key}
+                  key={label as string}
                   className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2"
                 >
-                  <span className="text-slate-500">{FIELD_LABELS[key]}</span>
+                  <span className="text-slate-500">{label}</span>
                   <span className="text-right font-medium text-slate-900">
-                    {hasValue(profile[key]) ? String(profile[key]) : "—"}
+                    {valueOrDash(value)}
                   </span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Estimated Result */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4">
               <h2 className="text-lg font-semibold">Estimated Result</h2>
             </div>
 
-            {isPredicting ? (
-              <div className="text-sm text-slate-600">Running prediction...</div>
+            {isBusy && !result ? (
+              <div className="text-sm text-slate-600">Running estimate...</div>
             ) : result ? (
               <div className="space-y-4">
                 <div>
-                  <div className="text-sm text-slate-500">
-                    Estimated property value
-                  </div>
+                  <div className="text-sm text-slate-500">Estimated property value</div>
                   <div className="mt-1 text-4xl font-semibold tracking-tight text-slate-900">
                     {formatCurrency(result.point_estimate)}
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-sm font-medium text-slate-800">
-                    Estimated Range
-                  </div>
+                  <div className="text-sm font-medium text-slate-800">Likely range</div>
                   <div className="mt-1 text-sm text-slate-700">
-                    {formatCurrency(result.lower_bound)} to{" "}
-                    {formatCurrency(result.upper_bound)}
+                    {formatCurrency(result.lower_bound)} to {formatCurrency(result.upper_bound)}
                   </div>
                 </div>
 
-                <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-                  <div>
-                    Error band:{" "}
-                    <span className="font-medium">
-                      {formatCurrency(result.error_band)}
-                    </span>
-                  </div>
-                  <div className="mt-1">
-                    Source: <span className="font-medium">{result.error_band_source}</span>
-                  </div>
-                </div>
+                <p className="text-sm text-slate-600">
+                  This is a model estimate of the total assessed property value (land plus
+                  building) — not a guaranteed sale price or an official appraisal. The range
+                  reflects how much similar properties in this area typically vary (about{" "}
+                  {formatCurrency(result.error_band)} either way).
+                </p>
 
-                <div>
-                  <div className="mb-2 text-sm font-medium text-slate-800">
-                    Derived / Lookup Details
-                  </div>
-                  <pre className="max-h-48 overflow-auto rounded-xl bg-slate-50 p-3 text-xs text-slate-700">
-                    {JSON.stringify(result.used_features, null, 2)}
+                <details className="text-sm text-slate-600">
+                  <summary className="cursor-pointer font-medium text-slate-800">
+                    Technical details
+                  </summary>
+                  <pre className="mt-2 max-h-48 overflow-auto rounded-xl bg-slate-50 p-3 text-xs text-slate-700">
+                    {JSON.stringify(
+                      {
+                        error_band_source: result.error_band_source,
+                        ...result.used_features,
+                      },
+                      null,
+                      2
+                    )}
                   </pre>
-                </div>
+                </details>
               </div>
             ) : (
               <div className="text-sm text-slate-600">
-                No prediction yet. <br/> Complete the guided steps, then type{" "}
-                <span className="font-medium">estimate</span>.
+                No estimate yet. Send a Vancouver address in the chat to get started.
               </div>
             )}
           </div>
