@@ -11,11 +11,11 @@ def _fmt_currency(x: float) -> str:
     return f"${x:,.0f}"
 
 
-st.set_page_config(page_title="Vancouver Land Value Estimator (Demo)", layout="wide")
+st.set_page_config(page_title="Vancouver Property Value Estimator (Demo)", layout="wide")
 
-st.title("Vancouver Land Value Estimator (Demo)")
+st.title("Vancouver Property Value Estimator (Demo)")
 st.caption(
-    "Course-project demo. This app estimates assessed land value (not guaranteed sale price)."
+    "Course-project demo. This app estimates total assessed property value (not a guaranteed sale price)."
 )
 
 @st.cache_resource
@@ -100,7 +100,7 @@ with col_left:
         else:
             big_improvement_year = None
 
-        submit = st.form_submit_button("Estimate Land Value")
+        submit = st.form_submit_button("Estimate property value")
 
 with col_right:
     st.subheader("Estimated Result")
@@ -129,7 +129,7 @@ with col_right:
             }
             try:
                 result = predictor.predict(user_input)
-                st.metric("Point Estimate (Assessed Land Value)", _fmt_currency(result.point_estimate))
+                st.metric("Estimated property value", _fmt_currency(result.point_estimate))
                 st.markdown(
                     f"**Estimated Range:** {_fmt_currency(result.lower_bound)} to {_fmt_currency(result.upper_bound)}"
                 )
@@ -155,7 +155,7 @@ st.markdown(
     """
 **Disclaimer**  
 This is a course-project demo based on historical assessment data and engineered features.  
-It estimates land assessment value, not a guaranteed market sale price.  
+It estimates total assessed property value (land plus building), not a guaranteed market sale price.
 Results should be interpreted as approximate.
 """
 )

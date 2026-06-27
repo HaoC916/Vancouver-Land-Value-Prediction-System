@@ -587,10 +587,6 @@ export default function FuzzyMode() {
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4">
               <h2 className="text-lg font-semibold">What we found</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Pulled from city property records for the address you picked — you
-                didn't have to know any of this.
-              </p>
             </div>
 
             <div className="space-y-3 text-sm">

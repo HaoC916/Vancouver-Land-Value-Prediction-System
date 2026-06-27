@@ -1,7 +1,7 @@
 # CMPT 733 Final Project — WEB CRaWLer
 
 ## Project Overview
-This project predicts Vancouver land **assessment** value (`CURRENT_LAND_VALUE`) and reports where prediction error is larger or smaller across neighbourhoods.
+This project predicts Vancouver **total assessed property value** (`CURRENT_PROPERTY_VALUE` = land + improvement) and reports where prediction error is larger or smaller across neighbourhoods. For condos/strata it estimates each unit individually, using the unit's own prior assessment.
 
 This repository uses one consolidated final pipeline:
 - clean property data
@@ -10,7 +10,7 @@ This repository uses one consolidated final pipeline:
 - train and evaluate one final model
 
 ## At a Glance
-- Target: `CURRENT_LAND_VALUE`
+- Target: `CURRENT_PROPERTY_VALUE` (land + improvement)
 - Final merged table: `data/processed/model_table.parquet`
 - Final trainer: `python -m src.models.train_model`
 - Notebook demo: `final_submission_demo.ipynb`
@@ -31,7 +31,7 @@ Raw data is shared outside git and should be downloaded from:
 https://drive.google.com/file/d/1ENhMgJCcVpjG5r3AhCcJd4pXKMpqBuBP/view?usp=sharing
 
 ## Target and Evaluation Protocol
-- Prediction target: `CURRENT_LAND_VALUE`
+- Prediction target: `CURRENT_PROPERTY_VALUE` (land + improvement)
 - Train split: `REPORT_YEAR < 2024`
 - Test split: `REPORT_YEAR >= 2024`
 - Official final model (`src/models/train_model.py`) uses **train-only target encoding** on:
@@ -133,32 +133,25 @@ Plain-language takeaway:
 ![Model Neighbourhood Difficulty](reports/figures/model_neighbourhood_difficulty_public.png)
 ![Model Feature Importance Top20](reports/figures/model_feature_importance_top20.png)
 
-## What Changed from the Earlier Model?
-Earlier model:
-- used the same split/target protocol but treated all categorical features with standard encoding only
-- handled very high-cardinality fields (`PROPERTY_POSTAL_CODE`, `NEIGHBOURHOOD_CODE`, `LEGAL_TYPE`) more naively
-- produced weaker error metrics
+## Model (property value + per-unit)
+The model predicts **total assessed property value** (`CURRENT_PROPERTY_VALUE` = land + improvement). It is a `HistGradientBoostingRegressor` trained on `log1p(target)`, with **train-only target encoding** (on `log1p(CURRENT_PROPERTY_VALUE)`) for the three highest-impact high-cardinality fields (`PROPERTY_POSTAL_CODE`, `NEIGHBOURHOOD_CODE`, `LEGAL_TYPE`).
 
-Current official model:
-- keeps the same reproducible pipeline and evaluation protocol
-- uses **train-only target encoding** (on `log1p(CURRENT_LAND_VALUE)`) for the 3 highest-impact high-cardinality categorical features
-- defaults to Mode B, which uses encoded numeric versions instead of raw high-cardinality categorical versions in the model input
-- improves RMSE, MAE, Median APE, and robust errors
+The single strongest feature is **`pid_prev_year_property_value`** — each property's own previous-year assessed value, computed leakage-safe (`shift(1)` over a property's own history). This is what lets the model estimate **individual condo/strata units**: units in the same building share every other feature, so a unit's own prior assessment is the only signal that tells it apart from its neighbours.
 
-| Model | RMSE | MAE | Median APE | Robust RMSE | Robust MAE |
-|---|---:|---:|---:|---:|---:|
-| Earlier model | 9,998,813.17 | 691,434.48 | 0.1818 | 1,657,883.65 | 489,160.08 |
-| Current encoded model | 9,577,667.34 | 590,037.32 | 0.1389 | 1,414,066.15 | 396,533.43 |
+| Metric | Value |
+|---|---:|
+| RMSE | 11,230,907 |
+| MAE | 469,183 |
+| Median APE | 0.0620 |
+| Robust RMSE | 1,059,819 |
+| Robust MAE | 198,834 |
 
-## Why Accuracy Improved
-The strongest signals in this project are fine-grained location and property-type fields. These fields have many distinct categories, so simple categorical handling leaves useful structure on the table.
-
-Train-only target encoding gives the model a cleaner numeric summary of how each category behaved in historical training data, while still avoiding leakage from the test period. In practice, this helped more than adding extra coarse yearly macro indicators.
+Headline RMSE is inflated by a few extreme high-value properties; the robust and median metrics are the honest summary. (An earlier version predicted land value only with ~0.14 median APE; switching the target to property value and adding the per-unit prior-value feature is what brought median APE down to ~0.06 and made condo estimates meaningful.)
 
 ## Demo Web App
 The project includes **two local demo interfaces** for presentation and educational use.
 
-Both demos use the same trained final model artifact (`artifacts/land_value_model.joblib`) and estimate **assessed land value**, not guaranteed market sale price. The two demos differ mainly in interface style and target users rather than underlying model logic.
+Both demos use the same trained final model artifact (`artifacts/land_value_model.joblib`) and estimate **total assessed property value**, not a guaranteed market sale price. The two demos differ mainly in interface style and target users rather than underlying model logic.
 
 ### Option A — React Frontend + REST API Backend
 This demo is a web-style interactive system built with:
@@ -177,7 +170,7 @@ It is designed to provide a more user-facing prediction experience and currently
   Users can start from address + postal code, retrieve matched candidate properties, and then generate a prediction from the selected match.
 
 App notes:
-- predicts **assessed land value (`CURRENT_LAND_VALUE`)**
+- predicts **total assessed property value (`CURRENT_PROPERTY_VALUE`)**
 - uses the same trained model as the final pipeline
 - supports two interaction modes:
   - **Precise Mode** for guided step-by-step prediction
@@ -192,12 +185,12 @@ App notes:
 ### Option B — Streamlit Demo
 This demo is a lightweight local interface implemented in Streamlit at `app.py`.
 
-- It estimates **assessed land value** from a small set of user inputs.
+- It estimates **total assessed property value** from a small set of user inputs.
 - It uses the trained final model artifact (`artifacts/land_value_model.joblib`).
 - It is for presentation and educational demo use, not professional appraisal.
 
 App notes:
-- The app predicts assessed land value, not guaranteed market sale price.
+- The app predicts total assessed property value, not a guaranteed market sale price.
 - The app is designed for near-range estimation only (`REPORT_YEAR` is limited to `2024`–`2027`).
 - This limit prevents misleading far-future predictions when lookup-based features are unavailable beyond the observed horizon.
 - Some internal model features are filled using derived fields and lookup values from `data/processed/model_table.parquet`.
@@ -205,9 +198,9 @@ App notes:
   The range uses neighbourhood-level typical error when available; otherwise it falls back to global model error.
 
 ## Current Finding
-- The encoded model in `src/models/train_model.py` is now the official final model.
-- Location/structure variables remain the main predictive drivers.
-- Better handling of high-cardinality categorical fields substantially improved performance versus the earlier main model.
+- The official model in `src/models/train_model.py` predicts total property value.
+- A property's own previous-year assessed value is by far the strongest signal, which also enables per-unit condo estimates.
+- Location/structure variables and target-encoded location fields are the next most useful.
 - Extra coarse macro information still adds limited gain compared with strong property-level signals.
 
 ## Setup
