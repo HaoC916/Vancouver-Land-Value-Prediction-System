@@ -7,7 +7,7 @@ type Page = "precise" | "fuzzy";
 
 export default function App() {
   // React state: which page is currently selected.
-  const [page, setPage] = useState<Page>("precise");
+  const [page, setPage] = useState<Page>("fuzzy");
 
   // Helper function that returns a Tailwind class string for tabs.
   // If active === true, we use a dark "selected" style.
@@ -84,17 +84,14 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right side: tab buttons */}
+          {/* Right side: tab buttons — address-first, with the technical
+              field-by-field flow kept as an "advanced" option. */}
           <nav className="flex items-center gap-2">
-            {/* 
-              On click -> setPage("agent")
-              tabClass(page === "agent") decides the active style
-            */}
-            <button className={tabClass(page === "precise")} onClick={() => setPage("precise")}>
-              Precise Mode
-            </button>
             <button className={tabClass(page === "fuzzy")} onClick={() => setPage("fuzzy")}>
-              Fuzzy Mode
+              Search by address
+            </button>
+            <button className={tabClass(page === "precise")} onClick={() => setPage("precise")}>
+              Advanced
             </button>
           </nav>
         </div>

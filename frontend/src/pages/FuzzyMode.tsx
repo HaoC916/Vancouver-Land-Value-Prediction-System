@@ -128,8 +128,7 @@ export default function FuzzyMode() {
    * - optional postal code
    * - optional report year
    */
-  const [streetNumber, setStreetNumber] = useState("");
-  const [streetName, setStreetName] = useState("");
+  const [addressInput, setAddressInput] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [reportYearInput, setReportYearInput] = useState("");
 
@@ -211,8 +210,7 @@ export default function FuzzyMode() {
    * ----------------------------------------------------------
    */
   function resetAll() {
-    setStreetNumber("");
-    setStreetName("");
+    setAddressInput("");
     setPostalCode("");
     setReportYearInput("");
 
@@ -240,19 +238,25 @@ export default function FuzzyMode() {
       setSelectedCandidate(null);
       setLookupResult(null);
 
-      const trimmedStreetNumber = streetNumber.trim();
-      const trimmedStreetName = streetName.trim();
+      const trimmedAddress = addressInput.trim();
       const normalizedPostal = postalCode.trim()
         ? normalizePostalCode(postalCode)
         : "";
 
-      if (!trimmedStreetNumber) {
-        throw new Error("Street Number is required.");
+      if (!trimmedAddress) {
+        throw new Error("Enter a street address, for example 1050 26TH AVE W.");
       }
 
-      if (!trimmedStreetName) {
-        throw new Error("Street Name is required.");
+      // Split the address into its leading civic number and the street name,
+      // so the user only has to type one natural "address" field.
+      const addrMatch = trimmedAddress.match(/^(\d+[A-Za-z]?)\s+(.+)$/);
+      if (!addrMatch) {
+        throw new Error(
+          "Start with the street number, then the street name — e.g. 1050 26TH AVE W."
+        );
       }
+      const trimmedStreetNumber = addrMatch[1];
+      const trimmedStreetName = addrMatch[2].trim();
 
       const reportYear = validateReportYear();
 
@@ -377,7 +381,11 @@ export default function FuzzyMode() {
     <div className="space-y-6">
       {/* Page title */}
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Fuzzy Mode</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Search by address</h1>
+        <p className="mt-1 text-sm text-slate-600">
+          Type a Vancouver street address and we'll estimate what the land is
+          worth — no property jargon needed.
+        </p>
       </div>
 
       {/* Backend status */}
@@ -421,21 +429,25 @@ export default function FuzzyMode() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="sm:col-span-1">
+              <div className="sm:col-span-2">
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Street Number
+                  Street address
                 </label>
                 <input
-                  value={streetNumber}
-                  onChange={(e) => setStreetNumber(e.target.value)}
-                  placeholder="Example: 1050"
+                  value={addressInput}
+                  onChange={(e) => setAddressInput(e.target.value)}
+                  placeholder="Example: 1050 26TH AVE W"
                   className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
                 />
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Just the street number and name — we'll fill in the rest for you.
+                </p>
               </div>
 
               <div className="sm:col-span-1">
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Postal Code (Optional)
+                  Postal code{" "}
+                  <span className="font-normal text-slate-400">(optional)</span>
                 </label>
                 <input
                   value={postalCode}
@@ -445,28 +457,17 @@ export default function FuzzyMode() {
                 />
               </div>
 
-              <div className="sm:col-span-2">
+              <div className="sm:col-span-1">
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Street Name
-                </label>
-                <input
-                  value={streetName}
-                  onChange={(e) => setStreetName(e.target.value)}
-                  placeholder="Example: 26TH AVE W"
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Report Year (Optional)
+                  Year{" "}
+                  <span className="font-normal text-slate-400">(optional)</span>
                 </label>
                 <input
                   value={reportYearInput}
                   onChange={(e) => setReportYearInput(e.target.value)}
                   placeholder={
                     healthInfo
-                      ? `Between ${healthInfo.min_report_year} and ${healthInfo.max_report_year}`
+                      ? `${healthInfo.min_report_year}–${healthInfo.max_report_year}`
                       : "Example: 2026"
                   }
                   className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
@@ -587,7 +588,11 @@ export default function FuzzyMode() {
           {/* Resolved property profile */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4">
-              <h2 className="text-lg font-semibold">Resolved Property Profile</h2>
+              <h2 className="text-lg font-semibold">What we found</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Pulled from city property records for the address you picked — you
+                didn't have to know any of this.
+              </p>
             </div>
 
             <div className="space-y-3 text-sm">
@@ -606,7 +611,7 @@ export default function FuzzyMode() {
               </div>
 
               <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Legal Type</span>
+                <span className="text-slate-500">Property type</span>
                 <span className="text-right font-medium text-slate-900">
                   {valueOrDash(selectedCandidate?.LEGAL_TYPE)}
                 </span>
@@ -627,7 +632,7 @@ export default function FuzzyMode() {
               </div>
 
               <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Neighbourhood Code</span>
+                <span className="text-slate-500">Neighbourhood</span>
                 <span className="text-right font-medium text-slate-900">
                   {valueOrDash(selectedCandidate?.NEIGHBOURHOOD_CODE)}
                 </span>
@@ -641,14 +646,14 @@ export default function FuzzyMode() {
               </div>
 
               <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Big Improvement Year</span>
+                <span className="text-slate-500">Last major improvement</span>
                 <span className="text-right font-medium text-slate-900">
                   {valueOrDash(selectedCandidate?.BIG_IMPROVEMENT_YEAR)}
                 </span>
               </div>
 
               <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Report Year</span>
+                <span className="text-slate-500">Assessment year</span>
                 <span className="text-right font-medium text-slate-900">
                   {valueOrDash(selectedCandidate?.REPORT_YEAR)}
                 </span>
@@ -678,7 +683,7 @@ export default function FuzzyMode() {
               <div className="space-y-4">
                 <div>
                   <div className="text-sm text-slate-500">
-                    Point Estimate (Assessed Land Value)
+                    Estimated land value
                   </div>
                   <div className="mt-1 text-4xl font-semibold tracking-tight text-slate-900">
                     {formatCurrency(result.point_estimate)}
@@ -687,7 +692,7 @@ export default function FuzzyMode() {
 
                 <div>
                   <div className="text-sm font-medium text-slate-800">
-                    Estimated Range
+                    Likely range
                   </div>
                   <div className="mt-1 text-sm text-slate-700">
                     {formatCurrency(result.lower_bound)} to{" "}
@@ -695,27 +700,28 @@ export default function FuzzyMode() {
                   </div>
                 </div>
 
-                <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-                  <div>
-                    Error band:{" "}
-                    <span className="font-medium">
-                      {formatCurrency(result.error_band)}
-                    </span>
-                  </div>
-                  <div className="mt-1">
-                    Source:{" "}
-                    <span className="font-medium">{result.error_band_source}</span>
-                  </div>
-                </div>
+                <p className="text-sm text-slate-600">
+                  This is a model estimate of the land's assessed value — not a
+                  guaranteed sale price or an official appraisal. The range reflects
+                  how much similar properties in this area typically vary (about{" "}
+                  {formatCurrency(result.error_band)} either way).
+                </p>
 
-                <div>
-                  <div className="mb-2 text-sm font-medium text-slate-800">
-                    Derived / Lookup Details
-                  </div>
-                  <pre className="max-h-48 overflow-auto rounded-xl bg-slate-50 p-3 text-xs text-slate-700">
-                    {JSON.stringify(result.used_features, null, 2)}
+                <details className="text-sm text-slate-600">
+                  <summary className="cursor-pointer font-medium text-slate-800">
+                    Technical details
+                  </summary>
+                  <pre className="mt-2 max-h-48 overflow-auto rounded-xl bg-slate-50 p-3 text-xs text-slate-700">
+                    {JSON.stringify(
+                      {
+                        error_band_source: result.error_band_source,
+                        ...result.used_features,
+                      },
+                      null,
+                      2
+                    )}
                   </pre>
-                </div>
+                </details>
               </div>
             ) : (
               <div className="text-sm text-slate-600">
