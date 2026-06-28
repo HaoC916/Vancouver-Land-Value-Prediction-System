@@ -20,26 +20,23 @@ app = FastAPI(title="Land Value API")
 # ------------------------------------------------------------
 # 2. Enable CORS for the React frontend
 # ------------------------------------------------------------
-# Origins are configurable via the ALLOWED_ORIGINS env var (comma-separated) so
-# the deployed backend can be locked to the real frontend without a code change.
-# When unset, we fall back to local dev + the known Vercel domain.
-_DEFAULT_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "https://vancouver-land-value-prediction-sys.vercel.app",
-]
-_env_origins = os.environ.get("ALLOWED_ORIGINS", "")
-ALLOWED_ORIGINS = (
-    [o.strip() for o in _env_origins.split(",") if o.strip()]
-    or _DEFAULT_ALLOWED_ORIGINS
-)
+# This is a public, read-only demo API (no auth, no cookies), so by default we
+# allow any origin — the frontend then works wherever it is hosted. Set
+# ALLOWED_ORIGINS to a comma-separated list to lock it down to specific origins.
+_env_origins = os.environ.get("ALLOWED_ORIGINS", "*").strip()
+if _env_origins == "*" or not _env_origins:
+    _cors_kwargs = {"allow_origins": ["*"], "allow_credentials": False}
+else:
+    _cors_kwargs = {
+        "allow_origins": [o.strip() for o in _env_origins.split(",") if o.strip()],
+        "allow_credentials": True,
+    }
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    **_cors_kwargs,
 )
 
 # ------------------------------------------------------------
