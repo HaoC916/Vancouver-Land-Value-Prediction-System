@@ -882,3 +882,16 @@ def predict(req: PredictRequest):
         "error_band_source": result.error_band_source,
         "used_features": result.used_features,
     }
+
+
+# ------------------------------------------------------------
+# 12. Pre-warm the address lookup at startup
+# ------------------------------------------------------------
+# The address lookup (~11MB) is otherwise lazy-loaded on the first
+# /resolve_address or /fuzzy_lookup call, which makes that first user request
+# slow. Loading it here (at import / container startup) moves the cost into the
+# start-up phase so the first real request is fast.
+try:
+    get_address_lookup_df()
+except Exception:
+    pass
