@@ -7,7 +7,7 @@ type Page = "precise" | "fuzzy";
 
 export default function App() {
   // React state: which page is currently selected.
-  const [page, setPage] = useState<Page>("fuzzy");
+  const [page, setPage] = useState<Page>("precise");
 
   // Helper function that returns a Tailwind class string for tabs.
   // If active === true, we use a dark "selected" style.
@@ -84,14 +84,14 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right side: tab buttons — both address-driven: a form view and a
-              conversational chat view of the same estimate. */}
+          {/* Right side: tab buttons — both address-driven (same model). Chat is
+              the default; Search is the form view. */}
           <nav className="flex items-center gap-2">
-            <button className={tabClass(page === "fuzzy")} onClick={() => setPage("fuzzy")}>
-              Search by address
-            </button>
             <button className={tabClass(page === "precise")} onClick={() => setPage("precise")}>
               Chat
+            </button>
+            <button className={tabClass(page === "fuzzy")} onClick={() => setPage("fuzzy")}>
+              Search
             </button>
           </nav>
         </div>

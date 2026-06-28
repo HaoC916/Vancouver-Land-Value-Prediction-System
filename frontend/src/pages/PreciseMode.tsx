@@ -36,7 +36,13 @@ type PredictResult = {
   used_features: Record<string, unknown>;
 };
 
-type ParsedAddress = { streetNumber: string; streetName: string; postal: string; raw: string };
+type ParsedAddress = {
+  unit: string;
+  streetNumber: string;
+  streetName: string;
+  postal: string;
+  raw: string;
+};
 type Phase = "address" | "unit" | "result";
 
 function formatCurrency(n: number): string {
@@ -57,14 +63,26 @@ function valueOrDash(value: unknown): string {
 
 function parseAddress(text: string): ParsedAddress | null {
   const [addrPart, postalPart] = text.split(",");
-  const addr = (addrPart || "").trim();
+  const raw = (addrPart || "").trim();
+  let addr = raw;
+  let unit = "";
+
+  // Optional "UNIT-BUILDING" prefix, e.g. "2301-1128 Hastings St W" -> unit 2301,
+  // building 1128. (The city writes condo addresses this way.)
+  const unitMatch = addr.match(/^(\d+[A-Za-z]?)\s*-\s*(\d.*)$/);
+  if (unitMatch) {
+    unit = unitMatch[1];
+    addr = unitMatch[2].trim();
+  }
+
   const match = addr.match(/^(\d+[A-Za-z]?)\s+(.+)$/);
   if (!match) return null;
   return {
+    unit,
     streetNumber: match[1],
     streetName: match[2].trim(),
     postal: postalPart ? normalizePostalCode(postalPart) : "",
-    raw: addr,
+    raw,
   };
 }
 
@@ -239,8 +257,9 @@ export default function PreciseMode() {
       }
       // none
       if (unit) {
+        setPendingAddr(addr);
         setPhase("unit");
-        queueAgentMessage(`I couldn't find unit ${unit} at ${addr.raw}. Try another unit number.`);
+        queueAgentMessage(`I couldn't find unit ${unit} at ${addr.raw}. What's the unit number?`);
       } else {
         setPhase("address");
         queueAgentMessage(
@@ -289,7 +308,7 @@ export default function PreciseMode() {
       queueAgentMessage("Start with the street number, then the street name — e.g. 1128 Hastings St W.");
       return;
     }
-    await resolve(parsed);
+    await resolve(parsed, parsed.unit || undefined);
   }
 
   const phaseHint =
@@ -315,7 +334,7 @@ export default function PreciseMode() {
 
       <div className="grid gap-6 lg:grid-cols-[1.25fr_0.95fr]">
         {/* Left: chat */}
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="self-start rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="text-sm font-semibold">Chat Window</div>
           </div>
