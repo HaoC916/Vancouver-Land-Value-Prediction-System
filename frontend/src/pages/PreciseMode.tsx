@@ -143,9 +143,10 @@ export default function PreciseMode() {
       }
     }
     loadHealth();
-    return () => {
-      if (typingTimerRef.current !== null) window.clearInterval(typingTimerRef.current);
-    };
+    // Note: we intentionally do NOT clear the typing timer in a cleanup here.
+    // Under React StrictMode the mount effect runs twice (mount → cleanup →
+    // mount); clearing the timer in cleanup would kill the greeting animation and
+    // leave an empty bubble. The interval clears itself when a message finishes.
     // run once on mount: greet + health check
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
