@@ -787,6 +787,87 @@ def fuzzy_lookup(
     }
 
 
+def _row_to_candidate(row, used_report_year: int) -> dict:
+    return {
+        "PID": str(row["PID"]).strip() if pd.notna(row.get("PID")) else None,
+        "display_address": str(row.get("DISPLAY_ADDRESS", "")),
+        "PROPERTY_POSTAL_CODE": normalize_postal_code(row.get("PROPERTY_POSTAL_CODE")),
+        "LEGAL_TYPE": str(row.get("LEGAL_TYPE", "")).strip(),
+        "ZONING_DISTRICT": str(row.get("ZONING_DISTRICT", "")).strip(),
+        "ZONING_CLASSIFICATION": str(row.get("ZONING_CLASSIFICATION", "")).strip(),
+        "NEIGHBOURHOOD_CODE": str(row.get("NEIGHBOURHOOD_CODE", "")).strip(),
+        "YEAR_BUILT": int(row["YEAR_BUILT"]) if pd.notna(row.get("YEAR_BUILT")) else None,
+        "BIG_IMPROVEMENT_YEAR": int(row["BIG_IMPROVEMENT_YEAR"]) if pd.notna(row.get("BIG_IMPROVEMENT_YEAR")) else None,
+        "REPORT_YEAR": int(row["REPORT_YEAR"]) if pd.notna(row.get("REPORT_YEAR")) else used_report_year,
+        "UNIT": str(row.get("FROM_CIVIC_NUMBER", "")).strip(),
+    }
+
+
+@app.get("/resolve_address")
+def resolve_address(
+    street_number: str = Query(..., description="Street/building number, e.g. 1128"),
+    street_name: str = Query(..., description="Street name, e.g. HASTINGS ST W"),
+    unit: Optional[str] = Query(default=None, description="Unit number for a strata building"),
+    property_postal_code: Optional[str] = Query(default=None),
+    report_year: Optional[int] = Query(default=None),
+):
+    """
+    Exact address resolution (not fuzzy). Matches on an exact street name plus an
+    exact building/street number (`TO_CIVIC_NUMBER`, which is the street number for
+    houses and the building number for strata). Returns one of:
+      - status "single"    -> one resolved property (estimate it)
+      - status "need_unit" -> a multi-unit building; ask the user for a unit number
+      - status "none"      -> no exact match
+    """
+    df = get_address_lookup_df()
+
+    target_year = int(report_year) if report_year is not None else predictor.default_report_year
+    work = df[df["REPORT_YEAR"].astype("Int64") == target_year].copy()
+    if work.empty:
+        work = df.copy()
+    used_report_year = target_year
+
+    name_norm = normalize_street_name(street_name)
+    work = work[work["STREET_NAME_NORMALIZED"] == name_norm].copy()
+
+    num = parse_civic_number_int(street_number)
+    if num is not None:
+        work = work[
+            (work["TO_CIVIC_NUM_INT"] == num) | (work["FROM_CIVIC_NUM_INT"] == num)
+        ].copy()
+
+    postal_norm = normalize_postal_code(property_postal_code)
+    if postal_norm and not work.empty:
+        exact_postal = work[work["POSTAL_CODE_NORMALIZED"] == postal_norm]
+        if not exact_postal.empty:
+            work = exact_postal.copy()
+
+    if work.empty:
+        return {"status": "none", "candidate": None, "unit_count": 0}
+
+    # If a unit was supplied, narrow to that unit (FROM_CIVIC for strata).
+    if unit is not None and str(unit).strip():
+        unit_num = parse_civic_number_int(unit)
+        if unit_num is not None:
+            work = work[work["FROM_CIVIC_NUM_INT"] == unit_num].copy()
+        if work.empty:
+            return {"status": "none", "candidate": None, "unit_count": 0}
+
+    dedup_cols = [
+        c for c in ["PID", "DISPLAY_ADDRESS", "FROM_CIVIC_NUMBER"] if c in work.columns
+    ]
+    work = work.drop_duplicates(subset=dedup_cols).copy()
+
+    if len(work) == 1:
+        return {
+            "status": "single",
+            "candidate": _row_to_candidate(work.iloc[0], used_report_year),
+            "unit_count": 1,
+        }
+
+    return {"status": "need_unit", "candidate": None, "unit_count": int(len(work))}
+
+
 @app.post("/predict")
 def predict(req: PredictRequest):
     """

@@ -580,31 +580,38 @@ class LandValuePredictor:
 
         return X, used
 
+    @staticmethod
+    def _clamp_rate(rate: float) -> float:
+        # Keep the band neither overconfident nor absurd.
+        return min(max(rate, 0.10), 0.30)
+
     def _error_band(self, prediction: float, neighbourhood_code: str) -> tuple[float, str]:
         """
-        Estimate prediction uncertainty band.
-        Prefer neighbourhood-level MAE if available; otherwise use global metrics.
+        Uncertainty band as a RELATIVE share of the estimate, using the
+        neighbourhood's median APE when available (else the global median APE).
+
+        Earlier this used absolute MAE, which is dominated by expensive detached
+        houses and produced absurd ranges for cheap condos (e.g. a $434k unit with
+        a $0–$1.5M band). A relative rate, clamped to [10%, 30%], scales sensibly
+        across price points without being fit tightly to the test set.
         """
-        if not self.neigh_error_df.empty and {"NEIGHBOURHOOD_CODE", "mean_abs_error"}.issubset(
+        if not self.neigh_error_df.empty and {"NEIGHBOURHOOD_CODE", "median_ape"}.issubset(
             self.neigh_error_df.columns
         ):
             match = self.neigh_error_df[
                 self.neigh_error_df["NEIGHBOURHOOD_CODE"].astype(str) == str(neighbourhood_code)
             ]
             if not match.empty:
-                val = pd.to_numeric(match["mean_abs_error"], errors="coerce").iloc[0]
-                if pd.notna(val):
-                    return float(val), "neighbourhood_mean_abs_error"
+                ape = pd.to_numeric(match["median_ape"], errors="coerce").iloc[0]
+                if pd.notna(ape) and ape > 0:
+                    return float(prediction * self._clamp_rate(float(ape))), "neighbourhood_median_ape"
 
-        if not self.metrics_df.empty:
-            for col in ["robust_mae", "mae"]:
-                if col in self.metrics_df.columns:
-                    val = pd.to_numeric(self.metrics_df[col], errors="coerce").iloc[0]
-                    if pd.notna(val):
-                        return float(val), f"global_{col}"
+        if not self.metrics_df.empty and "median_ape" in self.metrics_df.columns:
+            ape = pd.to_numeric(self.metrics_df["median_ape"], errors="coerce").iloc[0]
+            if pd.notna(ape) and ape > 0:
+                return float(prediction * self._clamp_rate(float(ape))), "global_median_ape"
 
-        fallback = max(100000.0, prediction * 0.20)
-        return float(fallback), "fallback_20pct"
+        return float(prediction * 0.15), "relative_15pct"
 
     def predict(self, user_input: dict[str, Any]) -> PredictionResult:
         """
