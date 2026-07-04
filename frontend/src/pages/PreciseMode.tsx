@@ -91,10 +91,14 @@ const GREETING =
   "For example: 1128 Hastings St W. You can add a postal code too, e.g. 1128 Hastings St W, V6E 4R5.";
 
 const AGENT_GREETING =
-  "Hi! Ask me about any City of Vancouver address and I'll estimate its property value — " +
-  "for example: what's 2308-1128 Hastings St W worth?\n\n" +
-  "I also know 2021 census facts and monthly market trends for Greater Vancouver and " +
-  "Toronto-area communities — try: how's the condo market in Richmond this year?";
+  "Hi! I can tell you what a Vancouver home is worth, or what's happening in " +
+  "neighbourhoods around Vancouver and Toronto.\n\nTry one of the examples below, or just ask.";
+
+const AGENT_SUGGESTIONS = [
+  "What's 2308-1128 Hastings St W worth?",
+  "How's the condo market in Metrotown?",
+  "Compare Burnaby and Richmond Hill",
+];
 
 type AgentChatResponse = {
   reply: string;
@@ -123,6 +127,12 @@ export default function PreciseMode() {
 
   // ---- typewriter: reveal agent messages character by character ----
   function playNextAgentMessage() {
+    // Self-heal: if the flag says "animating" but no interval is alive (e.g. an
+    // animation was interrupted), clear the stale flag instead of stalling the
+    // queue forever.
+    if (isAnimatingRef.current && typingTimerRef.current === null) {
+      isAnimatingRef.current = false;
+    }
     if (isAnimatingRef.current) return;
     const nextText = pendingAgentMessagesRef.current.shift();
     if (!nextText) return;
@@ -347,7 +357,11 @@ export default function PreciseMode() {
   }
 
   async function handleSend() {
-    const raw = input.trim();
+    await submitText(input);
+  }
+
+  async function submitText(text: string) {
+    const raw = text.trim();
     if (!raw || isBusy) return;
     setInput("");
     addUserMessage(raw);
@@ -390,7 +404,7 @@ export default function PreciseMode() {
   }
 
   const phaseHint = agentMode
-    ? "Ask about a Vancouver address or a Metro Vancouver / Toronto-area neighbourhood. Type reset to start over."
+    ? null
     : phase === "unit"
       ? "Enter your unit number, or type back to change the address."
       : "Type a Vancouver address, or reset to start over.";
@@ -434,19 +448,33 @@ export default function PreciseMode() {
                   {m.text}
                 </div>
               ))}
+              {agentMode && messages.length <= 1 && !isBusy && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {AGENT_SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => submitText(s)}
+                      className="rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-100"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div ref={bottomRef} />
             </div>
           </div>
 
           <div className="border-t border-slate-200 p-3 space-y-2">
-            <div className="text-xs text-slate-500">{phaseHint}</div>
+            {phaseHint && <div className="text-xs text-slate-500">{phaseHint}</div>}
             <div className="flex items-center gap-2">
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={
                   agentMode
-                    ? "Example: what's 2308-1128 Hastings St W worth?"
+                    ? "Ask me anything…"
                     : phase === "unit"
                       ? "Example: 2308"
                       : "Example: 1128 Hastings St W"
