@@ -90,6 +90,18 @@ const GREETING =
   "Hi! Tell me a Vancouver street address and I'll estimate its property value.\n\n" +
   "For example: 1128 Hastings St W. You can add a postal code too, e.g. 1128 Hastings St W, V6E 4R5.";
 
+const AGENT_GREETING =
+  "Hi! Ask me about any City of Vancouver address and I'll estimate its property value — " +
+  "for example: what's 2308-1128 Hastings St W worth?\n\n" +
+  "I can also share 2021 census facts about Greater Vancouver and Toronto-area " +
+  "neighbourhoods — try: compare home values in Burnaby and Markham.";
+
+type AgentChatResponse = {
+  reply: string;
+  property: ResolvedProperty | null;
+  estimate: PredictResult | null;
+};
+
 export default function PreciseMode() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -99,6 +111,9 @@ export default function PreciseMode() {
   const [result, setResult] = useState<PredictResult | null>(null);
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  // true -> free-form AI agent chat; false -> the scripted address flow.
+  const [agentMode, setAgentMode] = useState(false);
+  const agentModeRef = useRef(false);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const typingTimerRef = useRef<number | null>(null);
@@ -149,8 +164,7 @@ export default function PreciseMode() {
   useEffect(() => {
     if (hasBootedRef.current) return;
     hasBootedRef.current = true;
-    queueAgentMessage(GREETING);
-    async function loadHealth() {
+    async function boot() {
       try {
         const res = await fetch(`${API_BASE}/health`);
         if (!res.ok) throw new Error("health failed");
@@ -159,8 +173,23 @@ export default function PreciseMode() {
       } catch {
         setBackendOk(false);
       }
+      // If the backend has an LLM key configured, switch the chat to the
+      // free-form agent; otherwise keep the original scripted flow.
+      let agent = false;
+      try {
+        const res = await fetch(`${API_BASE}/assistant/status`);
+        if (res.ok) {
+          const data = await res.json();
+          agent = Boolean(data.available);
+        }
+      } catch {
+        agent = false;
+      }
+      agentModeRef.current = agent;
+      setAgentMode(agent);
+      queueAgentMessage(agent ? AGENT_GREETING : GREETING);
     }
-    loadHealth();
+    boot();
     // Note: we intentionally do NOT clear the typing timer in a cleanup here.
     // Under React StrictMode the mount effect runs twice (mount → cleanup →
     // mount); clearing the timer in cleanup would kill the greeting animation and
@@ -186,7 +215,50 @@ export default function PreciseMode() {
     setSelected(null);
     setResult(null);
     setInput("");
-    queueAgentMessage("Okay, starting over. What's the address?");
+    queueAgentMessage(
+      agentModeRef.current
+        ? "Okay, starting over. Ask me about an address or a neighbourhood."
+        : "Okay, starting over. What's the address?"
+    );
+  }
+
+  async function agentSend(text: string) {
+    setIsBusy(true);
+    try {
+      // Send the visible conversation (mapped to API roles), capped to the
+      // backend's history limit.
+      const history = [...messages, { role: "user" as const, text }]
+        .filter((m) => m.text.trim().length > 0)
+        .slice(-18)
+        .map((m) => ({ role: m.role === "agent" ? "assistant" : "user", content: m.text }));
+
+      const res = await fetch(`${API_BASE}/assistant/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: history }),
+      });
+      if (!res.ok) {
+        let detail = "The assistant is temporarily unavailable.";
+        try {
+          const body = await res.json();
+          if (typeof body?.detail === "string" && body.detail) detail = body.detail;
+        } catch {
+          // keep default
+        }
+        queueAgentMessage(detail);
+        return;
+      }
+      const data: AgentChatResponse = await res.json();
+      if (data.property && data.estimate) {
+        setSelected(data.property);
+        setResult(data.estimate);
+      }
+      queueAgentMessage(data.reply);
+    } catch {
+      queueAgentMessage("Sorry, I couldn't reach the assistant. Please try again.");
+    } finally {
+      setIsBusy(false);
+    }
   }
 
   async function estimate(candidate: ResolvedProperty) {
@@ -285,6 +357,12 @@ export default function PreciseMode() {
       resetConversation();
       return;
     }
+
+    if (agentModeRef.current) {
+      await agentSend(raw);
+      return;
+    }
+
     if (cmd === "back") {
       if (phase === "unit") {
         setPhase("address");
@@ -311,8 +389,9 @@ export default function PreciseMode() {
     await resolve(parsed, parsed.unit || undefined);
   }
 
-  const phaseHint =
-    phase === "unit"
+  const phaseHint = agentMode
+    ? "Ask about a Vancouver address or a Metro Vancouver / Toronto-area neighbourhood. Type reset to start over."
+    : phase === "unit"
       ? "Enter your unit number, or type back to change the address."
       : "Type a Vancouver address, or reset to start over.";
 
@@ -365,7 +444,13 @@ export default function PreciseMode() {
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={phase === "unit" ? "Example: 2308" : "Example: 1128 Hastings St W"}
+                placeholder={
+                  agentMode
+                    ? "Example: what's 2308-1128 Hastings St W worth?"
+                    : phase === "unit"
+                      ? "Example: 2308"
+                      : "Example: 1128 Hastings St W"
+                }
                 className="h-11 w-full min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSend();

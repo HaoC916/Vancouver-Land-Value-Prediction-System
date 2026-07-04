@@ -11,3 +11,6 @@ scikit-learn==1.8.0
 scipy==1.17.1
 joblib==1.5.3
 pyarrow==23.0.1
+# AI assistant (Claude tool-use agent loop); the API works without a key,
+# the assistant endpoint just reports offline.
+anthropic==0.79.0

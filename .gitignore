@@ -58,3 +58,5 @@ data/raw.zip
 !data/deploy/predict_fsa_lookup.parquet
 !data/deploy/predict_global_lookup.parquet
 !data/deploy/predict_pid_lookup.parquet
+# Vite dev cache
+frontend/.vite/

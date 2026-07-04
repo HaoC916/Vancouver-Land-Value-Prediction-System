@@ -885,7 +885,15 @@ def predict(req: PredictRequest):
 
 
 # ------------------------------------------------------------
-# 12. Pre-warm the address lookup at startup
+# 12. AI assistant routes (offline unless ANTHROPIC_API_KEY is set)
+# ------------------------------------------------------------
+from src.api.assistant import router as assistant_router  # noqa: E402
+
+app.include_router(assistant_router)
+
+
+# ------------------------------------------------------------
+# 13. Pre-warm the address lookup at startup
 # ------------------------------------------------------------
 # The address lookup (~11MB) is otherwise lazy-loaded on the first
 # /resolve_address or /fuzzy_lookup call, which makes that first user request
