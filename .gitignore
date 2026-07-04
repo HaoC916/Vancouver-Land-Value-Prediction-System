@@ -60,3 +60,4 @@ data/raw.zip
 !data/deploy/predict_pid_lookup.parquet
 # Vite dev cache
 frontend/.vite/
+!data/deploy/market_trend.parquet

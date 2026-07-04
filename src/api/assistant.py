@@ -33,6 +33,15 @@ PER_IP_DAILY_LIMIT = 30
 GLOBAL_DAILY_LIMIT = 300
 
 CENSUS_PATH = Path("data/deploy/census_csd.json")
+MARKET_PATH = Path("data/deploy/market_trend.parquet")
+
+# Source codes -> what users actually say.
+PTYPE_ALIASES = {
+    "HOUSE": "HOUSE", "HOUSES": "HOUSE", "DETACHED": "HOUSE",
+    "APTU": "APTU", "CONDO": "APTU", "CONDOS": "APTU", "APARTMENT": "APTU", "APT": "APTU",
+    "TWIN": "TWIN", "TOWNHOUSE": "TWIN", "TOWNHOME": "TWIN", "ATTACHED": "TWIN",
+    "OTHER": "OTHER",
+}
 
 SYSTEM_PROMPT = """\
 You are the built-in assistant of a property-value demo web app built by Ryan
@@ -53,14 +62,23 @@ Chen. You have two abilities, both backed by real data:
    municipalities — present both. This is a 2021 snapshot; say so when asked
    about "now".
 
+3. Market trends — monthly community-level resale market data (new listings,
+   sales, average sold prices, days on market) from May 2021 to May 2026 for
+   177 real-estate-board areas around Greater Vancouver, the Greater Toronto
+   Area, and nearby cities. Use get_market_trend. Area names follow board
+   conventions: "Vancouver West"/"Vancouver East", "Burnaby North/South/East",
+   "Toronto C01".."W10" districts — a partial name like "Burnaby" matches all
+   its parts. These are aggregate monthly figures, not individual listings.
+
 Rules:
 - Amounts are CAD. Reply in plain text only — no markdown, no asterisks.
 - Use the numbers the tools return; never estimate from memory. If a tool
   reports not found, say so and suggest what to try (search_addresses helps
   with misspelled streets; the format is like "1128 HASTINGS ST W").
 - If a building needs a unit number, ask the user for it.
-- You have no listing prices, sales, or market-trend data. You cannot predict
-  future prices. Politely decline questions unrelated to this app's data.
+- You cannot predict future prices and this is not investment advice — trends
+  describe what already happened. Politely decline questions unrelated to
+  this app's data.
 - Keep answers short and concrete — a few sentences. This is a public demo.
 """
 
@@ -85,6 +103,18 @@ def get_census_rows() -> list[dict[str, Any]]:
     if _census_rows is None:
         _census_rows = json.loads(CENSUS_PATH.read_text()) if CENSUS_PATH.exists() else []
     return _census_rows
+
+
+_market_df = None
+
+
+def get_market_df():
+    global _market_df
+    if _market_df is None:
+        import pandas as pd
+
+        _market_df = pd.read_parquet(MARKET_PATH) if MARKET_PATH.exists() else pd.DataFrame()
+    return _market_df
 
 
 # ------------------------------------------------------------
@@ -166,6 +196,31 @@ TOOLS = [
     {
         "name": "list_census_areas",
         "description": "List the 65 municipalities that have census profiles, grouped by region.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_market_trend",
+        "description": (
+            "Monthly resale market trend for a real-estate-board area or a named "
+            "community (subarea): sales, new listings, and sales-weighted average "
+            "sold price per month, plus a year-over-year price change. Partial names "
+            "match ('Burnaby' covers Burnaby North/South/East). property_type: HOUSE "
+            "(detached, default), APTU (condo/apartment), TWIN (townhouse/attached), "
+            "OTHER. Data: May 2021 - May 2026."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "area_name": {"type": "string", "description": "Board area or community name, e.g. Richmond, Vancouver West, Metrotown"},
+                "property_type": {"type": "string", "description": "HOUSE (default), APTU, TWIN, or OTHER; condo/townhouse aliases accepted"},
+                "months": {"type": "integer", "description": "How many recent months to return (3-24, default 12)"},
+            },
+            "required": ["area_name"],
+        },
+    },
+    {
+        "name": "list_market_areas",
+        "description": "List the 177 real-estate-board area names that have market-trend data.",
         "input_schema": {"type": "object", "properties": {}},
     },
 ]
@@ -267,6 +322,114 @@ def _tool_list_areas() -> dict:
     return {"count": len(rows), "regions": by_region}
 
 
+def _monthly_frame(rows):
+    """Aggregate subarea rows to one row per month (sales-weighted avg price)."""
+    import pandas as pd
+
+    def agg(group: "pd.DataFrame") -> "pd.Series":
+        priced = group.dropna(subset=["avg_sold_price"])
+        priced = priced[priced["sold_count"] > 0]
+        weight = priced["sold_count"].sum()
+        price = float((priced["avg_sold_price"] * priced["sold_count"]).sum() / weight) if weight else None
+        return pd.Series({
+            "sold": int(group["sold_count"].fillna(0).sum()),
+            "new_listings": int(group["new_listing_count"].fillna(0).sum()),
+            "avg_sold_price": price,
+        })
+
+    monthly = rows.groupby("period_start").apply(agg, include_groups=False).reset_index()
+    return monthly.sort_values("period_start")
+
+
+def _window_price(monthly, start: int, end: int):
+    window = monthly.iloc[start:end].dropna(subset=["avg_sold_price"])
+    if window.empty or window["sold"].sum() == 0:
+        return None
+    return float((window["avg_sold_price"] * window["sold"]).sum() / window["sold"].sum())
+
+
+def _trend_block(label: str, rows, months: int) -> dict:
+    monthly = _monthly_frame(rows)
+    recent = monthly.tail(months)
+    series = [
+        {
+            "month": r["period_start"],
+            "sold": int(r["sold"]),
+            "new_listings": int(r["new_listings"]),
+            "avg_sold_price": round(r["avg_sold_price"]) if r["avg_sold_price"] else None,
+        }
+        for _, r in recent.iterrows()
+    ]
+    block: dict[str, Any] = {
+        "name": label,
+        "monthly": series,
+        "sold_last_12_months": int(monthly.tail(12)["sold"].sum()),
+    }
+    latest = _window_price(monthly, -3, len(monthly))
+    year_ago = _window_price(monthly, -15, -12)
+    if latest and year_ago:
+        block["avg_price_last_3_months"] = round(latest)
+        block["avg_price_same_3_months_last_year"] = round(year_ago)
+        block["price_change_pct_year_over_year"] = round((latest / year_ago - 1) * 100, 1)
+    return block
+
+
+def _tool_market_trend(area_name: str, property_type: Optional[str] = None, months: Optional[int] = None) -> dict:
+    df = get_market_df()
+    if df.empty:
+        return {"note": "Market-trend data is not available in this deployment."}
+
+    months = max(3, min(int(months or 12), 24))
+    ptype_raw = str(property_type or "HOUSE").strip().upper()
+    ptype = PTYPE_ALIASES.get(ptype_raw)
+    ptype_note = None
+    if ptype is None:
+        ptype = "HOUSE"
+        ptype_note = f"Unknown property_type '{property_type}' - defaulted to HOUSE. Valid: HOUSE, APTU (condo), TWIN (townhouse), OTHER."
+    typed = df[df["property_type"] == ptype]
+
+    needle = str(area_name).strip().lower()
+    area_names = sorted(typed["area_name"].dropna().unique())
+    matches = [a for a in area_names if a.lower() == needle] or [a for a in area_names if needle in a.lower()]
+
+    blocks = []
+    if matches:
+        for area in matches[:3]:
+            blocks.append(_trend_block(area, typed[typed["area_name"] == area], months))
+    else:
+        # No board area matched - try community (subarea) names.
+        pairs = typed[["area_name", "subarea_name"]].dropna().drop_duplicates()
+        sub_matches = pairs[pairs["subarea_name"].str.lower().str.contains(needle, regex=False)]
+        if sub_matches.empty:
+            return {"count": 0,
+                    "note": "No board area or community matched that name. Call list_market_areas for valid area names."}
+        for _, pair in sub_matches.head(3).iterrows():
+            rows = typed[(typed["area_name"] == pair["area_name"]) & (typed["subarea_name"] == pair["subarea_name"])]
+            blocks.append(_trend_block(f"{pair['subarea_name']} ({pair['area_name']})", rows, months))
+        matches = list(sub_matches["subarea_name"])
+
+    result: dict[str, Any] = {
+        "property_type": ptype,
+        "count": len(matches),
+        "trends": blocks,
+    }
+    if len(matches) > 3:
+        result["note"] = f"{len(matches)} areas matched; showing the first 3. Ask with a more specific name for others."
+    if property_type is None:
+        result["default_note"] = "property_type defaulted to HOUSE (detached). Also available: APTU (condo/apartment), TWIN (townhouse), OTHER."
+    if ptype_note:
+        result["default_note"] = ptype_note
+    return result
+
+
+def _tool_list_market_areas() -> dict:
+    df = get_market_df()
+    if df.empty:
+        return {"note": "Market-trend data is not available in this deployment."}
+    names = sorted(df["area_name"].dropna().unique().tolist())
+    return {"count": len(names), "areas": names}
+
+
 def run_tool(name: str, tool_input: dict, state: dict) -> tuple[str, bool]:
     """Returns (json_result, is_error)."""
     try:
@@ -278,6 +441,10 @@ def run_tool(name: str, tool_input: dict, state: dict) -> tuple[str, bool]:
             payload = _tool_area_profile(**tool_input)
         elif name == "list_census_areas":
             payload = _tool_list_areas()
+        elif name == "get_market_trend":
+            payload = _tool_market_trend(**tool_input)
+        elif name == "list_market_areas":
+            payload = _tool_list_market_areas()
         else:
             return f"Error: unknown tool {name}", True
         return json.dumps(payload, default=str), False

@@ -93,8 +93,8 @@ const GREETING =
 const AGENT_GREETING =
   "Hi! Ask me about any City of Vancouver address and I'll estimate its property value — " +
   "for example: what's 2308-1128 Hastings St W worth?\n\n" +
-  "I can also share 2021 census facts about Greater Vancouver and Toronto-area " +
-  "neighbourhoods — try: compare home values in Burnaby and Markham.";
+  "I also know 2021 census facts and monthly market trends for Greater Vancouver and " +
+  "Toronto-area communities — try: how's the condo market in Richmond this year?";
 
 type AgentChatResponse = {
   reply: string;
