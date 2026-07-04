@@ -474,7 +474,7 @@ export default function PreciseMode() {
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={
                   agentMode
-                    ? "Ask me anything…"
+                    ? "Try an address or a neighbourhood…"
                     : phase === "unit"
                       ? "Example: 2308"
                       : "Example: 1128 Hastings St W"
