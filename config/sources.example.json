@@ -1,0 +1,21 @@
+{
+  "_comment": "Template for config/sources.local.json (which is gitignored). Copy this file to config/sources.local.json and point each logical source at your local, licensed data files. The real files are private and must never be committed.",
+  "data_root": "PATH/TO/YOUR/LOCAL/DATA/DIR",
+  "sources": {
+    "market_records": "listings_export.csv",
+    "property": "property.csv",
+    "land": "land.csv",
+    "address": "address.csv",
+    "region": "region.csv",
+    "link_property": "link_property.csv",
+    "link_land": "link_land.csv",
+    "link_address": "link_address.csv",
+    "school": "school.csv",
+    "school_rank": "school_rank.csv",
+    "land_school": "land_school.csv",
+    "market_stats": "market_stats.csv"
+  },
+  "regions": {
+    "greater_vancouver": { "boards": ["BOARD_CODE_A", "BOARD_CODE_B"], "province": "XX" }
+  }
+}

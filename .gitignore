@@ -61,3 +61,7 @@ data/raw.zip
 # Vite dev cache
 frontend/.vite/
 !data/deploy/market_trend.parquet
+
+# Local source manifest — maps logical names to licensed, private data files.
+# NEVER commit (keeps real source filenames/paths out of the repo).
+config/sources.local.json
