@@ -105,8 +105,14 @@ def build_market_table(fact_path: Path) -> tuple[pd.DataFrame, list[dict]]:
         df["property_age"] = df[YEAR_COL] - df["p_yearbuilt"]
         df.loc[(df["property_age"] < 0) | (df["property_age"] > 250), "property_age"] = np.nan
     df["postal_fsa"] = _postal_fsa(df["postal_code"])
+    # Best-available floor area (coalesce, plausibility-clipped) — the dominant price
+    # driver and the denominator for the price-per-sqft model.
+    area_src = [c for c in ["p_grandtotalfloorarea", "p_totalfloorarea", "p_floorareamain"] if c in df.columns]
+    df["sqft_best"] = df[area_src].bfill(axis=1).iloc[:, 0] if area_src else np.nan
+    df.loc[(df["sqft_best"] < 200) | (df["sqft_best"] > 20000), "sqft_best"] = np.nan
     _append(summary, "engineered", "property_age", "created")
     _append(summary, "engineered", "postal_fsa", "created")
+    _append(summary, "engineered", "sqft_best", "created")
 
     # Leakage-safe history.
     df, prop_cols = _property_history(df)
@@ -124,7 +130,7 @@ def build_market_table(fact_path: Path) -> tuple[pd.DataFrame, list[dict]]:
     feature_cols = (
         [c for c in NUM_FEATURES if c in df.columns]
         + [c for c in CAT_FEATURES if c in df.columns]
-        + ["property_age", "postal_fsa", AREA_COL, "list_month"]
+        + ["property_age", "postal_fsa", "sqft_best", AREA_COL, "list_month"]
         + prop_cols + area_cols
     )
     keep = [TARGET_COL, YEAR_COL] + feature_cols

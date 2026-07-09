@@ -1,9 +1,16 @@
 """Phase 1 — train the market-price model (predicts list price).
 
-Separate from train_model.py (the assessment-value model) so that deployed pipeline
-stays untouched. Reuses the shared train-only target encoders and metrics. Uses a
-forward-in-time split (train on earlier years, test on the latest) so the reported
-error reflects genuine out-of-time generalization.
+Separate from train_model.py (the assessment-value model) so the deployed pipeline
+stays untouched. Reuses the shared train-only target encoders and metrics.
+
+Two design choices that materially cut error over a plain price model:
+  * price-per-sqft target — model log(price / floor_area) where floor area is known
+    (~97% of rows), which removes the size scale so the model can focus on location
+    and quality; a direct log(price) model is the fallback for rows without area.
+  * tuned LightGBM (falls back to HistGradientBoosting if LightGBM is unavailable).
+
+Forward-in-time split (train earlier years, test the latest) so the reported error
+reflects genuine out-of-time generalization.
 
 Run:
     python -m src.models.train_market_model
@@ -34,19 +41,23 @@ from src.eval.metrics import (
 
 TARGET_COL = "listprice"
 YEAR_COL = "list_year"
+SQFT_COL = "sqft_best"
 HIGH_CARD_COLS = ["region_name", "postal_fsa"]
 
+TUNED = dict(n_estimators=1500, learning_rate=0.03, num_leaves=127,
+             min_child_samples=40, subsample=0.8, colsample_bytree=0.8)
 
-def _choose_model():
+
+def _make_model():
     try:
         from lightgbm import LGBMRegressor  # type: ignore
-        return "lightgbm", LGBMRegressor(random_state=42, n_estimators=600, learning_rate=0.05)
+        return "lightgbm", LGBMRegressor(random_state=42, n_jobs=-1, verbose=-1, **TUNED)
     except Exception:
         return "hist_gradient_boosting", HistGradientBoostingRegressor(
-            random_state=42, max_iter=600, learning_rate=0.05)
+            random_state=42, max_iter=TUNED["n_estimators"], learning_rate=TUNED["learning_rate"])
 
 
-def _build_pipeline(cat_cols, numeric_cols, model) -> Pipeline:
+def _build_pipeline(cat_cols, numeric_cols) -> Pipeline:
     transformers = []
     if cat_cols:
         transformers.append(("cat", Pipeline([
@@ -56,6 +67,7 @@ def _build_pipeline(cat_cols, numeric_cols, model) -> Pipeline:
     if numeric_cols:
         transformers.append(("num", Pipeline([("imputer", SimpleImputer(strategy="median"))]), numeric_cols))
     pre = ColumnTransformer(transformers=transformers, remainder="drop")
+    _, model = _make_model()
     return Pipeline([("preprocess", pre), ("model", model)])
 
 
@@ -71,7 +83,8 @@ def train(data_path: Path, split_year: int, save: bool) -> dict:
     test_df = df[df[YEAR_COL] >= split_year].copy()
     if train_df.empty or test_df.empty:
         raise ValueError(f"Empty split at year {split_year}: train={len(train_df)}, test={len(test_df)}")
-    print(f"[market_model] train={len(train_df):,} (<{split_year})  test={len(test_df):,} (>={split_year})")
+    backend, _ = _make_model()
+    print(f"[market_model] train={len(train_df):,} (<{split_year})  test={len(test_df):,} (>={split_year})  backend={backend}")
 
     X_train_raw, y_train = train_df[feature_cols].copy(), train_df[TARGET_COL].copy()
     X_test_raw, y_test = test_df[feature_cols].copy(), test_df[TARGET_COL].copy()
@@ -86,19 +99,29 @@ def train(data_path: Path, split_year: int, save: bool) -> dict:
     numeric_cols = [c for c in X_train.columns if pd.api.types.is_numeric_dtype(X_train[c])]
     cat_cols = [c for c in X_train.columns if c not in numeric_cols]
 
-    backend, model = _choose_model()
-    print(f"[market_model] backend={backend}  target-encoded={high_card}")
-    pipeline = _build_pipeline(cat_cols, numeric_cols, model)
-    pipeline.fit(X_train, y_train_log)
+    sqft_tr = pd.to_numeric(train_df[SQFT_COL], errors="coerce").values
+    sqft_te = pd.to_numeric(test_df[SQFT_COL], errors="coerce").values
+    m_tr, m_te = ~np.isnan(sqft_tr), ~np.isnan(sqft_te)
 
-    y_pred = np.maximum(np.expm1(pipeline.predict(X_test)), 0.0)
+    # Direct log(price) model — trained on all rows, used as fallback.
+    direct = _build_pipeline(cat_cols, numeric_cols)
+    direct.fit(X_train, y_train_log)
+    y_pred = np.expm1(direct.predict(X_test))
 
-    y_true_stats, y_pred_stats = prediction_sanity_stats(y_test, y_pred)
-    w = scale_warning(y_true_stats, y_pred_stats)
+    # Price-per-sqft model — natural log(price / sqft) where floor area is known.
+    ppsf = None
+    if m_tr.sum() > 1000:
+        ppsf = _build_pipeline(cat_cols, numeric_cols)
+        ppsf.fit(X_train[m_tr], np.log(y_train.values[m_tr] / sqft_tr[m_tr]))
+        y_pred[m_te] = np.exp(ppsf.predict(X_test[m_te])) * sqft_te[m_te]
+    y_pred = np.maximum(y_pred, 0.0)
+
+    _, y_pred_stats = prediction_sanity_stats(y_test, y_pred)
+    w = scale_warning(*prediction_sanity_stats(y_test, y_pred))
     if w:
         print(w)
     metrics = compute_metrics(y_test, y_pred, y_train)
-    print(f"[market_model] Test Median APE: {metrics['median_ape']:.4f}")
+    print(f"[market_model] Test Median APE: {metrics['median_ape']:.4f}   (sqft coverage {m_te.mean()*100:.1f}%)")
     print(f"[market_model] Test MAE: {metrics['mae']:,.0f}   RMSE: {metrics['rmse']:,.0f}")
     print(f"[market_model] Robust MAE: {metrics['robust_mae']:,.0f}   Robust RMSE: {metrics['robust_rmse']:,.0f}")
 
@@ -107,7 +130,9 @@ def train(data_path: Path, split_year: int, save: bool) -> dict:
         "mae": float(metrics["mae"]), "rmse": float(metrics["rmse"]),
         "robust_mae": float(metrics["robust_mae"]), "robust_rmse": float(metrics["robust_rmse"]),
         "n_train": int(len(train_df)), "n_test": int(len(test_df)),
-        "n_features": int(X_train.shape[1]), "model_backend": backend, "split_year": split_year,
+        "n_features": int(X_train.shape[1]), "model_backend": backend,
+        "split_year": split_year, "sqft_coverage_test": float(m_te.mean()),
+        "uses_price_per_sqft": ppsf is not None,
     }
 
     if save:
@@ -116,16 +141,13 @@ def train(data_path: Path, split_year: int, save: bool) -> dict:
         meta = Path("artifacts/market_model_metadata.json")
         art.parent.mkdir(parents=True, exist_ok=True)
 
-        region_err = neighbourhood_summary(y_test.values, y_pred, test_df["region_name"].values)
-        region_err.rename(columns={"NEIGHBOURHOOD_CODE": "region_name"}).to_csv(
-            figs / "market_region_error.csv", index=False)
-        pd.DataFrame([{"model": f"market_{backend}", **result}]).to_csv(
-            figs / "market_model_metrics.csv", index=False)
-        # Nice-to-have report; the shared helper assumes a model with
-        # feature_importances_ (LightGBM). Keep it non-fatal for HistGBR fallback.
+        neighbourhood_summary(y_test.values, y_pred, test_df["region_name"].values).rename(
+            columns={"NEIGHBOURHOOD_CODE": "region_name"}).to_csv(figs / "market_region_error.csv", index=False)
+        pd.DataFrame([{"model": f"market_{backend}", **result}]).to_csv(figs / "market_model_metrics.csv", index=False)
         try:
+            imp_model = ppsf if ppsf is not None else direct
             save_feature_importance(
-                pipeline=pipeline, X_test=X_test, y_test=np.log1p(y_test),
+                pipeline=imp_model, X_test=X_test, y_test=np.log1p(y_test),
                 out_csv_path=figs / "market_feature_importance.csv",
                 out_png_path=figs / "market_feature_importance_top20.png",
                 grouped_csv_path=figs / "market_feature_importance_grouped.csv")
@@ -133,8 +155,10 @@ def train(data_path: Path, split_year: int, save: bool) -> dict:
             print(f"[market_model] feature importance skipped: {e}")
 
         joblib.dump({
-            "pipeline": pipeline, "feature_cols": list(X_train.columns),
-            "cat_cols": cat_cols, "numeric_cols": numeric_cols,
+            "model_type": "ppsf_dual",
+            "direct_pipeline": direct, "ppsf_pipeline": ppsf, "sqft_col": SQFT_COL,
+            "ppsf_transform": "natural_log(price/sqft)", "direct_transform": "log1p(price)",
+            "feature_cols": list(X_train.columns), "cat_cols": cat_cols, "numeric_cols": numeric_cols,
             "target_col": TARGET_COL, "year_col": YEAR_COL, "model_backend": backend,
             "target_encoding": {"cols": high_card,
                                 "encoders": {c: {"mapping": encoders[c].mapping,
@@ -144,6 +168,7 @@ def train(data_path: Path, split_year: int, save: bool) -> dict:
         meta.write_text(json.dumps({
             "target": TARGET_COL,
             "prediction_note": "Predicts the market LIST price of a residential property; not a guaranteed sale price.",
+            "model_type": "price-per-sqft with direct-price fallback",
             "feature_names_used": list(X_train.columns),
             "train_year_rule": f"{YEAR_COL} < {split_year}",
             "test_year_rule": f"{YEAR_COL} >= {split_year}",
