@@ -2,8 +2,9 @@ import { useState } from "react";
 // Import "pages" (components).
 import PreciseMode from "./pages/PreciseMode";
 import FuzzyMode from "./pages/FuzzyMode";
+import MarketMode from "./pages/MarketMode";
 
-type Page = "precise" | "fuzzy";
+type Page = "precise" | "fuzzy" | "market";
 
 export default function App() {
   // React state: which page is currently selected.
@@ -93,6 +94,9 @@ export default function App() {
             <button className={tabClass(page === "fuzzy")} onClick={() => setPage("fuzzy")}>
               Search
             </button>
+            <button className={tabClass(page === "market")} onClick={() => setPage("market")}>
+              Market price
+            </button>
           </nav>
         </div>
       </header>
@@ -101,6 +105,7 @@ export default function App() {
       <main className="mx-auto w-full max-w-6xl px-6 py-8">
         {page === "precise" && <PreciseMode />}
         {page === "fuzzy" && <FuzzyMode />}
+        {page === "market" && <MarketMode />}
       </main>
     </div>
   );
