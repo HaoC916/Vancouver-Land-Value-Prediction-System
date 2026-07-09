@@ -6,11 +6,12 @@ from typing import Optional
 import re
 
 import pandas as pd
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.infer.predict import LandValuePredictor
+from src.infer.market_predict import MarketPricePredictor
 
 # ------------------------------------------------------------
 # 1. Create FastAPI app
@@ -40,9 +41,16 @@ app.add_middleware(
 )
 
 # ------------------------------------------------------------
-# 3. Load predictor once at startup
+# 3. Load predictors once at startup
 # ------------------------------------------------------------
 predictor = LandValuePredictor()
+
+# Market list-price model (feature-driven; optional — the endpoint reports 503 if
+# the artifact is absent, so the assessment API still works without it).
+try:
+    market_predictor: MarketPricePredictor | None = MarketPricePredictor()
+except Exception:
+    market_predictor = None
 
 # ------------------------------------------------------------
 # 4. Address lookup source
@@ -881,6 +889,36 @@ def predict(req: PredictRequest):
         "error_band": result.error_band,
         "error_band_source": result.error_band_source,
         "used_features": result.used_features,
+    }
+
+
+class MarketPredictRequest(BaseModel):
+    property_type: Optional[str] = None
+    bedrooms: Optional[float] = None
+    bathrooms: Optional[float] = None
+    floor_area_sqft: Optional[float] = None
+    area_name: Optional[str] = None
+    year_built: Optional[int] = None
+    postal_code: Optional[str] = None
+
+
+@app.post("/predict_market")
+def predict_market(req: MarketPredictRequest):
+    """
+    Feature-driven market list-price estimate for Greater Vancouver + Fraser Valley.
+    Unlike /predict (assessed value, address-based), this takes property facts
+    (type, beds, baths, floor area, area) and returns a market list-price estimate.
+    """
+    if market_predictor is None:
+        raise HTTPException(503, "The market-price model is not available in this deployment.")
+    r = market_predictor.predict(req.model_dump())
+    return {
+        "point_estimate": r.point_estimate,
+        "lower_bound": r.lower_bound,
+        "upper_bound": r.upper_bound,
+        "error_band": r.error_band,
+        "method": r.method,
+        "used_features": r.used_features,
     }
 
 

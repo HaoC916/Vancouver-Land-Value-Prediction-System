@@ -154,6 +154,34 @@ def train(data_path: Path, split_year: int, save: bool) -> dict:
         except Exception as e:  # noqa: BLE001
             print(f"[market_model] feature importance skipped: {e}")
 
+        # Self-contained inference defaults so the predictor needs only this artifact
+        # (no large lookup shipped): medians/modes of raw features + per-area history.
+        raw_feats = [c for c in df.columns if c not in {TARGET_COL, YEAR_COL}]
+        raw_num = [c for c in raw_feats if pd.api.types.is_numeric_dtype(train_df[c])]
+        raw_cat = [c for c in raw_feats if c not in raw_num]
+        numeric_defaults = {c: float(pd.to_numeric(train_df[c], errors="coerce").median())
+                            for c in raw_num if pd.to_numeric(train_df[c], errors="coerce").notna().any()}
+        categorical_defaults = {}
+        for c in raw_cat:
+            mode = train_df[c].dropna().astype(str).mode()
+            categorical_defaults[c] = str(mode.iloc[0]) if not mode.empty else "Unknown"
+        area_hist_cols = ["area_prev_year_median_list", "area_prev_year_listing_count", "area_prev_year_growth"]
+        region_area_history = {}
+        for reg, g in train_df.groupby("region_name"):
+            region_area_history[str(reg)] = {
+                col: float(pd.to_numeric(g[col], errors="coerce").median())
+                for col in area_hist_cols
+                if col in g and pd.to_numeric(g[col], errors="coerce").notna().any()}
+        inference = {
+            "numeric_defaults": numeric_defaults,
+            "categorical_defaults": categorical_defaults,
+            "region_area_history": region_area_history,
+            "default_list_month": int(pd.to_numeric(train_df["list_month"], errors="coerce").median()),
+            "median_ape": float(metrics["median_ape"]),
+            "user_inputs": ["property_type", "bedrooms", "bathrooms", "floor_area_sqft",
+                            "area_name", "year_built", "postal_code"],
+        }
+
         joblib.dump({
             "model_type": "ppsf_dual",
             "direct_pipeline": direct, "ppsf_pipeline": ppsf, "sqft_col": SQFT_COL,
@@ -164,6 +192,7 @@ def train(data_path: Path, split_year: int, save: bool) -> dict:
                                 "encoders": {c: {"mapping": encoders[c].mapping,
                                                  "global_mean": float(encoders[c].global_mean)}
                                              for c in high_card}},
+            "inference": inference,
         }, art)
         meta.write_text(json.dumps({
             "target": TARGET_COL,

@@ -45,7 +45,7 @@ PTYPE_ALIASES = {
 
 SYSTEM_PROMPT = """\
 You are the built-in assistant of a property-value demo web app built by Ryan
-Chen. You have two abilities, both backed by real data:
+Chen. You have several abilities, all backed by real data:
 
 1. Property value estimates — a machine-learning model trained on City of
    Vancouver property-tax assessment records. Use estimate_property_value with
@@ -54,6 +54,18 @@ Chen. You have two abilities, both backed by real data:
    Toronto etc. are NOT in the assessment data — for those you can only offer
    census facts. Estimates are model estimates of assessed value (land plus
    building), not appraisals or sale prices; always mention the likely range.
+
+   Market list price — a second machine-learning model that estimates what a
+   home would LIST for on the market today from its features (property type,
+   bedrooms, bathrooms, floor area, area) across Greater Vancouver and the
+   Fraser Valley. Use estimate_market_price. This is different from the assessed
+   value above: assessed value is the City of Vancouver tax value looked up by
+   address; this is a market list-price estimate driven by property features and
+   works across the whole region (Burnaby, Richmond, Surrey, Coquitlam, etc.).
+   Ask the user for the facts you are missing (at least type, floor area, and
+   area). If the area name is not recognised, call list_market_price_areas. It
+   is a model estimate of list price, not a guaranteed sale price — give the
+   likely range.
 
 2. Neighbourhood facts — 2021 Canadian census profiles for 65 municipalities
    across Greater Vancouver and the Greater Toronto Area (population, income,
@@ -158,6 +170,35 @@ TOOLS = [
             },
             "required": ["street_number", "street_name"],
         },
+    },
+    {
+        "name": "estimate_market_price",
+        "description": (
+            "Estimate the current MARKET LIST price of a home in Greater Vancouver or the "
+            "Fraser Valley from its features. Different from estimate_property_value (which is "
+            "the City of Vancouver assessed/tax value by address): this works across the whole "
+            "region and is driven by property facts. Provide at least property_type, "
+            "floor_area_sqft, and area_name. Returns a list-price estimate and likely range; "
+            "not a guaranteed sale price."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "property_type": {"type": "string", "description": "house / condo / townhouse"},
+                "bedrooms": {"type": "number", "description": "Number of bedrooms"},
+                "bathrooms": {"type": "number", "description": "Number of bathrooms"},
+                "floor_area_sqft": {"type": "number", "description": "Floor area in square feet"},
+                "area_name": {"type": "string", "description": "Area, e.g. Vancouver West, Richmond, Surrey, Burnaby North"},
+                "year_built": {"type": "integer", "description": "Year the home was built (optional)"},
+                "postal_code": {"type": "string", "description": "Optional postal code"},
+            },
+            "required": ["area_name"],
+        },
+    },
+    {
+        "name": "list_market_price_areas",
+        "description": "List the Greater Vancouver / Fraser Valley areas the market-price estimator recognises.",
+        "input_schema": {"type": "object", "properties": {}},
     },
     {
         "name": "search_addresses",
@@ -285,6 +326,41 @@ def _tool_estimate(state: dict, street_number: str, street_name: str,
             "unit": cand.get("UNIT") or None,
         },
     }
+
+
+def _tool_market_price(area_name: str, property_type: Optional[str] = None,
+                       bedrooms: Optional[float] = None, bathrooms: Optional[float] = None,
+                       floor_area_sqft: Optional[float] = None, year_built: Optional[int] = None,
+                       postal_code: Optional[str] = None) -> dict:
+    from src.api import main as api
+
+    if api.market_predictor is None:
+        return {"status": "unavailable", "note": "The market-price model is not loaded in this deployment."}
+    r = api.market_predictor.predict({
+        "property_type": property_type, "bedrooms": bedrooms, "bathrooms": bathrooms,
+        "floor_area_sqft": floor_area_sqft, "area_name": area_name,
+        "year_built": year_built, "postal_code": postal_code,
+    })
+    resolved = r.used_features.get("area_name")
+    return {
+        "status": "ok",
+        "estimate_list_price_cad": round(r.point_estimate),
+        "likely_range_cad": [round(r.lower_bound), round(r.upper_bound)],
+        "method": r.method,
+        "resolved_area": resolved,
+        "inputs_used": r.used_features,
+        "note": ("This is a market list-price estimate, not a guaranteed sale price."
+                 if resolved else
+                 "Area not recognised — used a region-wide average. Call list_market_price_areas for valid areas."),
+    }
+
+
+def _tool_list_market_price_areas() -> dict:
+    from src.api import main as api
+
+    if api.market_predictor is None:
+        return {"note": "The market-price model is not loaded in this deployment."}
+    return {"count": len(api.market_predictor.known_areas), "areas": api.market_predictor.known_areas}
 
 
 def _tool_search(street_number: str, street_name: str, postal_code: Optional[str] = None) -> dict:
@@ -435,6 +511,10 @@ def run_tool(name: str, tool_input: dict, state: dict) -> tuple[str, bool]:
     try:
         if name == "estimate_property_value":
             payload = _tool_estimate(state, **tool_input)
+        elif name == "estimate_market_price":
+            payload = _tool_market_price(**tool_input)
+        elif name == "list_market_price_areas":
+            payload = _tool_list_market_price_areas()
         elif name == "search_addresses":
             payload = _tool_search(**tool_input)
         elif name == "get_area_profile":

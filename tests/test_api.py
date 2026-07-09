@@ -1,8 +1,15 @@
+import pytest
 from fastapi.testclient import TestClient
 
-from src.api.main import app
+from src.api.main import app, market_predictor
 
 client = TestClient(app)
+
+# The market-price model is a large build/deploy artifact (not committed to git);
+# skip its tests where it is absent (e.g. CI) rather than failing.
+market_missing = pytest.mark.skipif(
+    market_predictor is None, reason="market-price model artifact not present"
+)
 
 
 def test_health():
@@ -36,6 +43,33 @@ def test_predict_returns_ordered_range():
     body = r.json()
     assert body["point_estimate"] > 0
     assert body["lower_bound"] <= body["point_estimate"] <= body["upper_bound"]
+
+
+@market_missing
+def test_predict_market_returns_ordered_range():
+    payload = {
+        "property_type": "condo",
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "floor_area_sqft": 900,
+        "area_name": "Vancouver West",
+        "year_built": 2015,
+    }
+    r = client.post("/predict_market", json=payload)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["point_estimate"] > 0
+    assert body["lower_bound"] <= body["point_estimate"] <= body["upper_bound"]
+    assert body["method"] in ("price_per_sqft", "direct")
+
+
+@market_missing
+def test_predict_market_area_affects_estimate():
+    base = {"property_type": "house", "bedrooms": 4, "bathrooms": 3, "floor_area_sqft": 2500}
+    west_van = client.post("/predict_market", json={**base, "area_name": "West Vancouver"}).json()
+    surrey = client.post("/predict_market", json={**base, "area_name": "Surrey"}).json()
+    # The same home should be estimated higher in West Vancouver than in Surrey.
+    assert west_van["point_estimate"] > surrey["point_estimate"]
 
 
 def test_fuzzy_lookup_finds_candidates():
