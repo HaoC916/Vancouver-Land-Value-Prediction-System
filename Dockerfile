@@ -3,6 +3,11 @@
 # load, so joblib unpickling stays consistent.
 FROM python:3.13-slim
 
+# LightGBM (the market-price model) needs the OpenMP runtime at load/predict time.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Hugging Face Spaces run the container as a non-root user with UID 1000.
 RUN useradd -m -u 1000 user
 USER user
