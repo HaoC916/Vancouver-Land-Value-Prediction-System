@@ -469,20 +469,25 @@ export default function PreciseMode() {
 
           <div className="border-t border-slate-200 p-3 space-y-2">
             {phaseHint && <div className="text-xs text-slate-500">{phaseHint}</div>}
-            <div className="flex items-center gap-2">
-              <input
+            <div className="flex items-end gap-2">
+              <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                rows={1}
                 placeholder={
                   agentMode
-                    ? "Try an address or a neighbourhood…"
+                    ? "Ask about a home, market, or neighbourhood…  (Shift+Enter for a new line)"
                     : phase === "unit"
                       ? "Example: 2308"
                       : "Example: 1128 Hastings St W"
                 }
-                className="h-11 w-full min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
+                className="min-h-[2.75rem] max-h-32 w-full min-w-0 flex-1 resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSend();
+                  // Enter sends; Shift+Enter inserts a newline (default textarea behaviour).
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
                 }}
                 disabled={isBusy}
               />
