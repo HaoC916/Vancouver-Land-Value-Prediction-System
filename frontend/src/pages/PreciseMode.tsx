@@ -91,13 +91,14 @@ const GREETING =
   "For example: 1128 Hastings St W. You can add a postal code too, e.g. 1128 Hastings St W, V6E 4R5.";
 
 const AGENT_GREETING =
-  "Hi! I can tell you what a Vancouver home is worth, or what's happening in " +
-  "neighbourhoods around Vancouver and Toronto.\n\nTry one of the examples below, or just ask.";
+  "Hi! I'm a real-estate chat assistant for the Vancouver area. Ask me anything " +
+  "property-related — what a home might be worth, how a market is trending, or what a " +
+  "neighbourhood around Vancouver or Toronto is like.";
 
 const AGENT_SUGGESTIONS = [
-  "What's 2308-1128 Hastings St W worth?",
+  "What would a 900 sq ft condo in Richmond list for?",
   "How's the condo market in Metrotown?",
-  "Compare Burnaby and Richmond Hill",
+  "Compare Burnaby and Richmond",
 ];
 
 type AgentChatResponse = {

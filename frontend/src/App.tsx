@@ -2,9 +2,8 @@ import { useState } from "react";
 // Import "pages" (components).
 import PreciseMode from "./pages/PreciseMode";
 import FuzzyMode from "./pages/FuzzyMode";
-import MarketMode from "./pages/MarketMode";
 
-type Page = "precise" | "fuzzy" | "market";
+type Page = "precise" | "fuzzy";
 
 export default function App() {
   // React state: which page is currently selected.
@@ -49,27 +48,25 @@ export default function App() {
                 className="text-white"
               >
                 <path
-                  d="M12 3V6"
+                  d="M4 11.5 12 5l8 6.5"
                   stroke="currentColor"
                   strokeWidth="1.8"
                   strokeLinecap="round"
+                  strokeLinejoin="round"
                 />
-                <rect
-                  x="5"
-                  y="7"
-                  width="14"
-                  height="10"
-                  rx="3"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                />
-                <circle cx="9.5" cy="12" r="1" fill="currentColor" />
-                <circle cx="14.5" cy="12" r="1" fill="currentColor" />
                 <path
-                  d="M9 15.5H15"
+                  d="M6 10.5V19h12v-8.5"
                   stroke="currentColor"
                   strokeWidth="1.8"
                   strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M10 19v-4h4v4"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 />
               </svg>
             </div>
@@ -94,9 +91,6 @@ export default function App() {
             <button className={tabClass(page === "fuzzy")} onClick={() => setPage("fuzzy")}>
               Search
             </button>
-            <button className={tabClass(page === "market")} onClick={() => setPage("market")}>
-              Market price
-            </button>
           </nav>
         </div>
       </header>
@@ -105,7 +99,6 @@ export default function App() {
       <main className="mx-auto w-full max-w-6xl px-6 py-8">
         {page === "precise" && <PreciseMode />}
         {page === "fuzzy" && <FuzzyMode />}
-        {page === "market" && <MarketMode />}
       </main>
     </div>
   );
