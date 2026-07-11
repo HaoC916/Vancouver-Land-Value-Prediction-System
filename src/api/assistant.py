@@ -188,7 +188,7 @@ TOOLS = [
                 "bedrooms": {"type": "number", "description": "Number of bedrooms"},
                 "bathrooms": {"type": "number", "description": "Number of bathrooms"},
                 "floor_area_sqft": {"type": "number", "description": "Floor area in square feet"},
-                "area_name": {"type": "string", "description": "Area, e.g. Vancouver West, Richmond, Surrey, Burnaby North"},
+                "area_name": {"type": "string", "description": "Area or neighbourhood — pass the most specific one the user gives, e.g. Vancouver West, Richmond, Surrey, or a neighbourhood like Metrotown, Yaletown, Brentwood"},
                 "year_built": {"type": "integer", "description": "Year the home was built (optional)"},
                 "postal_code": {"type": "string", "description": "Optional postal code"},
             },
