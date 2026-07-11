@@ -106,10 +106,11 @@ def build_market_fact(manifest: dict, region_name: str, limit: int | None) -> tu
     region_ids, region_names = _resolve_scope(source_path(manifest, "region"), cfg)
 
     addr = pd.read_csv(source_path(manifest, "address"),
-                       usecols=["id", "area_id", "postal_code"], dtype=str)
+                       usecols=["id", "area_id", "subarea_id", "postal_code"], dtype=str)
     addr = addr[addr["area_id"].isin(region_ids)]
     scope_address_ids = set(addr["id"])
     addr["region_name"] = addr["area_id"].map(region_names)
+    addr["subarea_name"] = addr["subarea_id"].map(region_names)
     print(f"[market_fact] in-scope addresses: {len(scope_address_ids):,}")
 
     link_addr = _load_link(source_path(manifest, "link_address"),
@@ -134,6 +135,22 @@ def build_market_fact(manifest: dict, region_name: str, limit: int | None) -> tu
     prop = prop.rename(columns={"id": "property_id"})
     print(f"[market_fact] property feature rows: {len(prop):,}")
 
+    # 2b) Key -> land parcel -> coordinates (sparse; a spatial signal where present).
+    link_land = _load_link(source_path(manifest, "link_land"),
+                           key_col="mlsid", val_col="landid",
+                           keep=scope_keys, keep_on="mlsid").rename(
+                               columns={"mlsid": KEY, "landid": "land_id"})
+    land = pd.read_csv(source_path(manifest, "land"),
+                       usecols=["id", "latitude", "longitude"], dtype={"id": str})
+    land = land[land["id"].isin(set(link_land["land_id"]))].drop_duplicates(subset=["id"], keep="first")
+    land = land.rename(columns={"id": "land_id"})
+    for c in ("latitude", "longitude"):
+        land[c] = pd.to_numeric(land[c], errors="coerce")
+        land.loc[land[c] == 0, c] = np.nan
+    key_coords = link_land.merge(land, on="land_id", how="left")[[KEY, "latitude", "longitude"]]
+    print(f"[market_fact] key->coords rows: {len(key_coords):,}  "
+          f"(lat present {key_coords['latitude'].notna().mean()*100:.0f}%)")
+
     # 3) Listing records — chunked, in-scope only, no free-text fields.
     mkt_path = source_path(manifest, "market_records")
     mkt_cols = _usecols_present(mkt_path, MARKET_USECOLS)
@@ -155,8 +172,10 @@ def build_market_fact(manifest: dict, region_name: str, limit: int | None) -> tu
     n0 = len(mkt)
     out = mkt.merge(link_prop, on=KEY, how="left").merge(prop, on="property_id", how="left")
     out = out.merge(link_addr, on=KEY, how="left")
-    out = out.merge(addr[["id", "region_name", "postal_code"]].rename(columns={"id": "addressid"}),
-                    on="addressid", how="left")
+    out = out.merge(
+        addr[["id", "region_name", "subarea_name", "postal_code"]].rename(columns={"id": "addressid"}),
+        on="addressid", how="left")
+    out = out.merge(key_coords, on=KEY, how="left")
     if len(out) != n0:
         raise ValueError(
             f"Row count changed after joins: {n0:,} -> {len(out):,} (non-unique merge = leakage risk)."

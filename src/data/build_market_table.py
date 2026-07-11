@@ -130,7 +130,7 @@ def build_market_table(fact_path: Path) -> tuple[pd.DataFrame, list[dict]]:
     feature_cols = (
         [c for c in NUM_FEATURES if c in df.columns]
         + [c for c in CAT_FEATURES if c in df.columns]
-        + ["property_age", "postal_fsa", "sqft_best", AREA_COL, "list_month"]
+        + ["property_age", "postal_fsa", "sqft_best", AREA_COL, "subarea_name", "list_month"]
         + prop_cols + area_cols
     )
     keep = [TARGET_COL, YEAR_COL] + feature_cols

@@ -65,11 +65,12 @@ def test_predict_market_returns_ordered_range():
 
 @market_missing
 def test_predict_market_area_affects_estimate():
-    base = {"property_type": "house", "bedrooms": 4, "bathrooms": 3, "floor_area_sqft": 2500}
-    west_van = client.post("/predict_market", json={**base, "area_name": "West Vancouver"}).json()
+    # The same condo should estimate well above in a premium area (Vancouver West) vs a
+    # lower-priced one (Surrey) — a large, reliable location premium the model captures.
+    base = {"property_type": "condo", "bedrooms": 2, "bathrooms": 2, "floor_area_sqft": 850}
+    van_west = client.post("/predict_market", json={**base, "area_name": "Vancouver West"}).json()
     surrey = client.post("/predict_market", json={**base, "area_name": "Surrey"}).json()
-    # The same home should be estimated higher in West Vancouver than in Surrey.
-    assert west_van["point_estimate"] > surrey["point_estimate"]
+    assert van_west["point_estimate"] > surrey["point_estimate"]
 
 
 def test_fuzzy_lookup_finds_candidates():
