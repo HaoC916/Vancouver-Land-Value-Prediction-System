@@ -106,6 +106,17 @@ class MarketPricePredictor:
             return self.subarea_to_area.get(pick), pick
         return None, None
 
+    def neighbourhoods_in(self, area_query: str | None) -> dict:
+        """List the known neighbourhoods (subareas) within a city/area, grouped by the
+        board area. Lets the agent offer the user concrete neighbourhood choices."""
+        q = str(area_query or "").strip().lower()
+        areas = [a for a in self.known_areas if q and (q in a.lower() or a.lower() in q)]
+        by_area: dict[str, list[str]] = {}
+        for sub, parent in self.subarea_to_area.items():
+            if parent in areas:
+                by_area.setdefault(parent, []).append(sub)
+        return {"matched_areas": areas, "neighbourhoods": {a: sorted(v)[:30] for a, v in by_area.items()}}
+
     def _clamp(self, rate: float) -> float:
         return min(max(rate, 0.08), 0.30)
 

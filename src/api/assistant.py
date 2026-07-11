@@ -56,16 +56,31 @@ Chen. You have several abilities, all backed by real data:
    building), not appraisals or sale prices; always mention the likely range.
 
    Market list price — a second machine-learning model that estimates what a
-   home would LIST for on the market today from its features (property type,
-   bedrooms, bathrooms, floor area, area) across Greater Vancouver and the
-   Fraser Valley. Use estimate_market_price. This is different from the assessed
-   value above: assessed value is the City of Vancouver tax value looked up by
-   address; this is a market list-price estimate driven by property features and
-   works across the whole region (Burnaby, Richmond, Surrey, Coquitlam, etc.).
-   Ask the user for the facts you are missing (at least type, floor area, and
-   area). If the area name is not recognised, call list_market_price_areas. It
-   is a model estimate of list price, not a guaranteed sale price — give the
-   likely range.
+   home would LIST for today from its features (property type, bedrooms,
+   bathrooms, floor area, neighbourhood) across Greater Vancouver and the Fraser
+   Valley. Use estimate_market_price. It is NOT looked up by address — it is
+   driven by property features, so gather them first. Never call it with guessed
+   or default values, and never answer a vague question ("what's a Burnaby condo
+   worth?") with one number — prices depend heavily on type, size and
+   neighbourhood, so ask a couple of quick questions first (keep it natural, one
+   or two at a time, not a form):
+     a) Property type — house/detached, condo/apartment, or townhouse? Ask, don't
+        assume; they are different markets.
+     b) Neighbourhood — which part of the city? A place like Burnaby ranges from
+        pricier areas (Metrotown) to cheaper ones, so it matters a lot. If the
+        user is unsure, ask what they care about (budget, commute/transit,
+        schools, or lifestyle/amenities), then offer concrete options with
+        list_neighbourhoods and city-level context from get_area_profile, and let
+        them pick one. (Be honest: you can list neighbourhoods and give
+        city-level facts, but you do not yet have per-neighbourhood school or
+        amenity scores — don't invent them.)
+     c) Size — floor area in square feet (the biggest driver), plus bedrooms and
+        bathrooms.
+   Only once you have type, a specific neighbourhood, and size should you call
+   estimate_market_price. Give the likely range; it's a model estimate of list
+   price, not a guaranteed sale price. Shortcut: if the user gives a precise City
+   of Vancouver street address, you can also offer the assessed value via
+   estimate_property_value.
 
 2. Neighbourhood facts — 2021 Canadian census profiles for 65 municipalities
    across Greater Vancouver and the Greater Toronto Area (population, income,
@@ -199,6 +214,19 @@ TOOLS = [
         "name": "list_market_price_areas",
         "description": "List the Greater Vancouver / Fraser Valley areas the market-price estimator recognises.",
         "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "list_neighbourhoods",
+        "description": (
+            "List the neighbourhoods the market-price model knows inside a city/area, e.g. "
+            "Burnaby -> Metrotown, Brentwood Park, Deer Lake, ... Use this to offer the user "
+            "concrete neighbourhood choices when they are unsure which part of a city they mean."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"area_name": {"type": "string", "description": "City/area, e.g. Burnaby, Surrey, Vancouver West"}},
+            "required": ["area_name"],
+        },
     },
     {
         "name": "search_addresses",
@@ -363,6 +391,17 @@ def _tool_list_market_price_areas() -> dict:
     return {"count": len(api.market_predictor.known_areas), "areas": api.market_predictor.known_areas}
 
 
+def _tool_list_neighbourhoods(area_name: str) -> dict:
+    from src.api import main as api
+
+    if api.market_predictor is None:
+        return {"note": "The market-price model is not loaded in this deployment."}
+    res = api.market_predictor.neighbourhoods_in(area_name)
+    if not res.get("matched_areas"):
+        return {"count": 0, "note": f"No area matched '{area_name}'. Call list_market_price_areas for valid city/area names."}
+    return res
+
+
 def _tool_search(street_number: str, street_name: str, postal_code: Optional[str] = None) -> dict:
     from src.api import main as api
 
@@ -515,6 +554,8 @@ def run_tool(name: str, tool_input: dict, state: dict) -> tuple[str, bool]:
             payload = _tool_market_price(**tool_input)
         elif name == "list_market_price_areas":
             payload = _tool_list_market_price_areas()
+        elif name == "list_neighbourhoods":
+            payload = _tool_list_neighbourhoods(**tool_input)
         elif name == "search_addresses":
             payload = _tool_search(**tool_input)
         elif name == "get_area_profile":
