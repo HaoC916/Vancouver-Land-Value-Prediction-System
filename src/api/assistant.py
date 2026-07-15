@@ -69,13 +69,15 @@ Chen. You have several abilities, all backed by real data:
      b) Neighbourhood — which part of the city? A place like Burnaby ranges from
         pricier areas (Metrotown) to cheaper ones, so it matters a lot. If the user
         is unsure, use recommend_neighbourhoods (city + type): pass a budget
-        (max_price) to rank neighbourhoods that fit by price, or sort_by=schools to
-        rank by nearby school quality (Fraser Institute score, 0-10) — match it to
-        what they care about, then let them pick one. You can also list options with
+        (max_price) to rank neighbourhoods that fit by price, sort_by=schools to
+        rank by nearby school quality (Fraser Institute score, 0-10), or
+        sort_by=amenities to rank by walkability/amenities (our 0-100 score from
+        nearby groceries, dining, parks and health services) — match it to what
+        they care about, then let them pick one. You can also list options with
         list_neighbourhoods and add city-level context from get_area_profile. (Be
-        honest about your data: you have per-neighbourhood PRICE and SCHOOL scores
-        plus city-level census facts, but not yet commute or amenity scores — don't
-        invent those.)
+        honest about your data: you have per-neighbourhood PRICE, SCHOOL and
+        AMENITY scores plus city-level census facts, but not yet commute or crime
+        scores — don't invent those.)
      c) Size — floor area in square feet (the biggest driver), plus bedrooms and
         bathrooms.
    Only once you have type, a specific neighbourhood, and size should you call
@@ -235,17 +237,19 @@ TOOLS = [
         "description": (
             "Recommend real neighbourhoods in a city, using per-neighbourhood data. Use when the "
             "user wants a home in a city but is unsure which neighbourhood. Rank by budget "
-            "(sort_by=price, with max_price/min_price) or by school quality (sort_by=schools — "
-            "best nearby Fraser Institute school score, 0-10). Returns each neighbourhood's typical "
-            "price, best/avg school score, days-on-market, and recent sales count (a low count = "
-            "thin/less-reliable data)."
+            "(sort_by=price, with max_price/min_price), by school quality (sort_by=schools — "
+            "best nearby Fraser Institute school score, 0-10), or by amenities/walkability "
+            "(sort_by=amenities — our 0-100 score from nearby groceries, dining, parks and health "
+            "services). Returns each neighbourhood's typical price, best/avg school score, amenity "
+            "score with the underlying POI counts, days-on-market, and recent sales count (a low "
+            "count = thin/less-reliable data)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "city": {"type": "string", "description": "City/area, e.g. Burnaby, Surrey, Coquitlam"},
                 "property_type": {"type": "string", "description": "house, condo, or townhouse"},
-                "sort_by": {"type": "string", "description": "price (default) or schools"},
+                "sort_by": {"type": "string", "description": "price (default), schools, or amenities"},
                 "max_price": {"type": "number", "description": "Budget ceiling in CAD (optional)"},
                 "min_price": {"type": "number", "description": "Budget floor in CAD (optional)"},
             },
