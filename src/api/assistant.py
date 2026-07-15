@@ -67,13 +67,15 @@ Chen. You have several abilities, all backed by real data:
      a) Property type — house/detached, condo/apartment, or townhouse? Ask, don't
         assume; they are different markets.
      b) Neighbourhood — which part of the city? A place like Burnaby ranges from
-        pricier areas (Metrotown) to cheaper ones, so it matters a lot. If the
-        user is unsure, ask what they care about (budget, commute/transit,
-        schools, or lifestyle/amenities), then offer concrete options with
-        list_neighbourhoods and city-level context from get_area_profile, and let
-        them pick one. (Be honest: you can list neighbourhoods and give
-        city-level facts, but you do not yet have per-neighbourhood school or
-        amenity scores — don't invent them.)
+        pricier areas (Metrotown) to cheaper ones, so it matters a lot. If the user
+        is unsure: when they have a BUDGET, call recommend_neighbourhoods (city +
+        type + budget) to suggest real neighbourhoods that fit, ranked by typical
+        price — then let them pick one. Otherwise ask what they care about, offer
+        concrete options with list_neighbourhoods plus city-level context from
+        get_area_profile, and let them choose. (Be honest about your data: you have
+        per-neighbourhood PRICE data and can rank neighbourhoods by budget, plus
+        city-level census facts — but you do NOT yet have per-neighbourhood school
+        or amenity scores, so don't invent them.)
      c) Size — floor area in square feet (the biggest driver), plus bedrooms and
         bathrooms.
    Only once you have type, a specific neighbourhood, and size should you call
@@ -226,6 +228,26 @@ TOOLS = [
             "type": "object",
             "properties": {"area_name": {"type": "string", "description": "City/area, e.g. Burnaby, Surrey, Vancouver West"}},
             "required": ["area_name"],
+        },
+    },
+    {
+        "name": "recommend_neighbourhoods",
+        "description": (
+            "Recommend real neighbourhoods in a city that fit a budget, ranked by typical recent "
+            "price, using per-neighbourhood market data. Use this when the user wants a home in a "
+            "city but is unsure which neighbourhood — especially when they give a budget. Returns "
+            "each neighbourhood's typical price, days-on-market, and recent sales count (a low "
+            "count = thin/less-reliable data)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "description": "City/area, e.g. Burnaby, Surrey, Coquitlam"},
+                "property_type": {"type": "string", "description": "house, condo, or townhouse"},
+                "max_price": {"type": "number", "description": "Budget ceiling in CAD (optional)"},
+                "min_price": {"type": "number", "description": "Budget floor in CAD (optional)"},
+            },
+            "required": ["city", "property_type"],
         },
     },
     {
@@ -402,6 +424,17 @@ def _tool_list_neighbourhoods(area_name: str) -> dict:
     return res
 
 
+def _tool_recommend_neighbourhoods(city: str, property_type: str,
+                                   max_price: Optional[float] = None,
+                                   min_price: Optional[float] = None) -> dict:
+    from src.api import main as api
+
+    if api.neighbourhood_profiles is None:
+        return {"status": "unavailable", "note": "Neighbourhood price data is not loaded in this deployment."}
+    return api.neighbourhood_profiles.recommend(
+        city=city, property_type=property_type, max_price=max_price, min_price=min_price)
+
+
 def _tool_search(street_number: str, street_name: str, postal_code: Optional[str] = None) -> dict:
     from src.api import main as api
 
@@ -556,6 +589,8 @@ def run_tool(name: str, tool_input: dict, state: dict) -> tuple[str, bool]:
             payload = _tool_list_market_price_areas()
         elif name == "list_neighbourhoods":
             payload = _tool_list_neighbourhoods(**tool_input)
+        elif name == "recommend_neighbourhoods":
+            payload = _tool_recommend_neighbourhoods(**tool_input)
         elif name == "search_addresses":
             payload = _tool_search(**tool_input)
         elif name == "get_area_profile":

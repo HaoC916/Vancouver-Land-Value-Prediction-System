@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from src.infer.predict import LandValuePredictor
 from src.infer.market_predict import MarketPricePredictor
+from src.infer.neighbourhoods import NeighbourhoodProfiles
 
 # ------------------------------------------------------------
 # 1. Create FastAPI app
@@ -51,6 +52,14 @@ try:
     market_predictor: MarketPricePredictor | None = MarketPricePredictor()
 except Exception:
     market_predictor = None
+
+# Per-neighbourhood price profiles (for the agent's budget-based recommendations).
+try:
+    neighbourhood_profiles: NeighbourhoodProfiles | None = NeighbourhoodProfiles()
+    if neighbourhood_profiles.df is None:
+        neighbourhood_profiles = None
+except Exception:
+    neighbourhood_profiles = None
 
 # ------------------------------------------------------------
 # 4. Address lookup source
