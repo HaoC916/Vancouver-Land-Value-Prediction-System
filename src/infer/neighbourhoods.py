@@ -8,12 +8,21 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 PROFILE_PATH = Path("data/deploy/neighbourhood_profile.parquet")
 SCHOOL_PATH = Path("data/deploy/subarea_school.parquet")
 AMENITIES_PATH = Path("data/deploy/subarea_amenities.parquet")
 TRANSIT_PATH = Path("data/deploy/subarea_transit.parquet")
+SAFETY_PATH = Path("data/deploy/subarea_safety.parquet")
+
+# Our own livability weights (NOT AreaVibes'): environment (amenities/transit/safety) +
+# schools. Computed over whichever components are present, weights renormalised. Requires the
+# Metro-Van trio (amenity + transit + safety) so the composite is only assigned where the full
+# quality-of-life picture exists; schools fold in when available.
+LIVABILITY_WEIGHTS = {"amenity_score": 0.30, "transit_score": 0.25,
+                      "safety_score": 0.25, "school100": 0.20}
 
 TYPE_MAP = {
     "house": "HOUSE", "detached": "HOUSE", "single family": "HOUSE",
@@ -27,24 +36,45 @@ MIN_RELIABLE_SALES = 6  # a year's sales below this → price is thin, flag it
 class NeighbourhoodProfiles:
     def __init__(self, path: Path = PROFILE_PATH, school_path: Path = SCHOOL_PATH,
                  amenities_path: Path = AMENITIES_PATH,
-                 transit_path: Path = TRANSIT_PATH) -> None:
+                 transit_path: Path = TRANSIT_PATH,
+                 safety_path: Path = SAFETY_PATH) -> None:
         if not path.exists():
             self.df = None
             return
         df = pd.read_parquet(path)
-        if school_path.exists():
-            df = df.merge(pd.read_parquet(school_path), on="region_id", how="left")
-        if amenities_path.exists():
-            df = df.merge(pd.read_parquet(amenities_path), on="region_id", how="left")
-        if transit_path.exists():
-            df = df.merge(pd.read_parquet(transit_path), on="region_id", how="left")
+        for p in (school_path, amenities_path, transit_path, safety_path):
+            if p.exists():
+                df = df.merge(pd.read_parquet(p), on="region_id", how="left")
         for c in ("best_school_score", "avg_school_score", "school_count",
                   "amenity_score", "grocery_count_1km", "food_count_1km",
                   "park_count_1km", "health_count_2km", "hospital_dist_km",
-                  "transit_score", "transit_stops_800m", "rapid_transit_dist_km"):
+                  "transit_score", "transit_stops_800m", "rapid_transit_dist_km",
+                  "safety_score", "crime_rate_per_100k", "safety_basis"):
             if c not in df.columns:
                 df[c] = None
-        self.df = df
+        self.df = self._add_livability(df)
+
+    @staticmethod
+    def _add_livability(df: pd.DataFrame) -> pd.DataFrame:
+        """Composite 0-100 livability = weighted blend of amenity/transit/safety/school
+        sub-scores, over whichever are present (weights renormalised). Only assigned where
+        amenity+transit+safety are all present (Metro Van), so it isn't a partial GTA score."""
+        vals = {
+            "amenity_score": pd.to_numeric(df["amenity_score"], errors="coerce"),
+            "transit_score": pd.to_numeric(df["transit_score"], errors="coerce"),
+            "safety_score": pd.to_numeric(df["safety_score"], errors="coerce"),
+            "school100": pd.to_numeric(df["best_school_score"], errors="coerce") * 10.0,
+        }
+        num = pd.Series(0.0, index=df.index)
+        den = pd.Series(0.0, index=df.index)
+        for col, w in LIVABILITY_WEIGHTS.items():
+            present = vals[col].notna()
+            num = num + np.where(present, vals[col].fillna(0.0) * w, 0.0)
+            den = den + np.where(present, w, 0.0)
+        core = vals["amenity_score"].notna() & vals["transit_score"].notna() & vals["safety_score"].notna()
+        liv = np.where(core & (den > 0), np.round(num / den, 1), np.nan)
+        df["livability_score"] = liv
+        return df
 
     def recommend(self, city: str, property_type: str | None = None,
                   max_price: float | None = None, min_price: float | None = None,
@@ -113,6 +143,31 @@ class NeighbourhoodProfiles:
                 d = d.sort_values("median_price")
                 note = ("No transit scores for these neighbourhoods (Metro Vancouver only) — "
                         "showing by price instead.")
+        elif key.startswith("saf") or key.startswith("crime"):
+            withsafety = d[d["safety_score"].notna()]
+            if not withsafety.empty:
+                d = withsafety.sort_values("safety_score", ascending=False)
+                mode = "safety"
+                note = ("Ranked by safety score (0-100, higher = safer; our own inverse of the "
+                        "official StatCan city-level crime rate per 100,000). This is a "
+                        "CITY-level rate shared by all neighbourhoods in a municipality, not "
+                        "block-by-block. Metro Vancouver municipalities only; price shown too.")
+            else:
+                d = d.sort_values("median_price")
+                note = ("No safety scores for these neighbourhoods (Metro Vancouver only) — "
+                        "showing by price instead.")
+        elif key.startswith("livab") or key.startswith("overall") or key.startswith("best"):
+            withliv = d[d["livability_score"].notna()]
+            if not withliv.empty:
+                d = withliv.sort_values("livability_score", ascending=False)
+                mode = "livability"
+                note = ("Ranked by our composite livability score (0-100): a weighted blend of "
+                        "amenities, transit, safety and schools. Metro Vancouver only (needs all "
+                        "sub-scores); price shown too so you can weigh it against cost.")
+            else:
+                d = d.sort_values("median_price")
+                note = ("No livability scores for these neighbourhoods (Metro Vancouver only) — "
+                        "showing by price instead.")
         else:
             d = d.sort_values("median_price")
 
@@ -134,6 +189,10 @@ class NeighbourhoodProfiles:
             "transit_score": s(r["transit_score"]),
             "transit_stops_800m": i_(r["transit_stops_800m"]),
             "rapid_transit_dist_km": s(r["rapid_transit_dist_km"]),
+            "safety_score": s(r["safety_score"]),
+            "crime_rate_per_100k": s(r["crime_rate_per_100k"]),
+            "safety_basis": None if pd.isna(r["safety_basis"]) else str(r["safety_basis"]),
+            "livability_score": s(r["livability_score"]),
             "median_days_on_market": None if pd.isna(r["median_dom"]) else int(r["median_dom"]),
             "sales_last_12m": int(r["sold_12m"]),
         } for _, r in d.head(limit).iterrows()]

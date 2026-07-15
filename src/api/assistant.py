@@ -72,14 +72,17 @@ Chen. You have several abilities, all backed by real data:
         (max_price) to rank neighbourhoods that fit by price, sort_by=schools to
         rank by nearby school quality (Fraser Institute score, 0-10),
         sort_by=amenities to rank by walkability/amenities (our 0-100 score from
-        nearby groceries, dining, parks and health services), or sort_by=commute
+        nearby groceries, dining, parks and health services), sort_by=commute
         to rank by transit access (our 0-100 score from TransLink stop density +
-        distance to SkyTrain/SeaBus/West Coast Express; Metro Vancouver only) —
-        match it to what they care about, then let them pick one. You can also list
-        options with list_neighbourhoods and add city-level context from
-        get_area_profile. (Be honest about your data: you have per-neighbourhood
-        PRICE, SCHOOL, AMENITY and (Metro Van) TRANSIT scores plus city-level
-        census facts, but not yet crime scores — don't invent those.)
+        distance to SkyTrain/SeaBus/West Coast Express), sort_by=safety to rank by
+        our 0-100 safety score (inverse of the official StatCan city-level crime
+        rate), or sort_by=livability for our composite score blending amenities,
+        transit, safety and schools — match it to what they care about, then let
+        them pick one. (Commute, safety and livability are Metro Vancouver only.)
+        You can also list options with list_neighbourhoods and add city-level
+        context from get_area_profile. (Be honest about your data: safety is a
+        CITY-level crime rate shared across a municipality, not block-by-block;
+        you don't have neighbourhood weather or user-review data — don't invent it.)
      c) Size — floor area in square feet (the biggest driver), plus bedrooms and
         bathrooms.
    Only once you have type, a specific neighbourhood, and size should you call
@@ -242,18 +245,21 @@ TOOLS = [
             "(sort_by=price, with max_price/min_price), by school quality (sort_by=schools — "
             "best nearby Fraser Institute school score, 0-10), by amenities/walkability "
             "(sort_by=amenities — our 0-100 score from nearby groceries, dining, parks and health "
-            "services), or by transit/commute (sort_by=commute — our 0-100 score from TransLink "
-            "stop density + distance to rapid transit, Metro Vancouver only). Returns each "
-            "neighbourhood's typical price, school score, amenity score (with POI counts), transit "
-            "score (with stop count + rapid-transit distance), days-on-market, and recent sales "
-            "count (a low count = thin/less-reliable data)."
+            "services), by transit/commute (sort_by=commute — our 0-100 score from TransLink stop "
+            "density + distance to rapid transit), by safety (sort_by=safety — our 0-100 score, "
+            "inverse of the official StatCan city-level crime rate), or by our composite livability "
+            "score (sort_by=livability — weighted blend of amenities, transit, safety, schools). "
+            "Commute, safety and livability cover Metro Vancouver only. Returns each neighbourhood's "
+            "typical price, school score, amenity score (with POI counts), transit score, safety "
+            "score (with the city crime rate it's based on), livability score, days-on-market, and "
+            "recent sales count (a low count = thin/less-reliable data)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "city": {"type": "string", "description": "City/area, e.g. Burnaby, Surrey, Coquitlam"},
                 "property_type": {"type": "string", "description": "house, condo, or townhouse"},
-                "sort_by": {"type": "string", "description": "price (default), schools, amenities, or commute"},
+                "sort_by": {"type": "string", "description": "price (default), schools, amenities, commute, safety, or livability"},
                 "max_price": {"type": "number", "description": "Budget ceiling in CAD (optional)"},
                 "min_price": {"type": "number", "description": "Budget floor in CAD (optional)"},
             },
