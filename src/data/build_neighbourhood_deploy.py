@@ -33,7 +33,8 @@ def build(in_path: Path, out_path: Path, months: int) -> pd.DataFrame:
     recent = df[df["period_start"] > cutoff]
 
     rows = []
-    for (sub, area, ptype), g in recent.groupby(["subarea_name", "area_name", "property_type"]):
+    for (rid, sub, area, ptype), g in recent.groupby(
+            ["region_id", "subarea_name", "area_name", "property_type"]):
         sold = g.dropna(subset=["median_sold_price"])
         sold = sold[sold["sold_count"] > 0]
         if len(sold) >= 3:
@@ -44,7 +45,7 @@ def build(in_path: Path, out_path: Path, months: int) -> pd.DataFrame:
                 continue
             price, basis = float(lst["median_list_price"].median()), "list"
         rows.append({
-            "subarea_name": sub, "area_name": area, "property_type": ptype,
+            "region_id": str(rid), "subarea_name": sub, "area_name": area, "property_type": ptype,
             "median_price": round(price), "price_basis": basis,
             "sold_12m": int(g["sold_count"].fillna(0).sum()),
             "median_dom": round(float(g["median_dom"].median())) if g["median_dom"].notna().any() else None,

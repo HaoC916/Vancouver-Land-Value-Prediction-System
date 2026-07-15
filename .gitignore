@@ -62,6 +62,7 @@ data/raw.zip
 frontend/.vite/
 !data/deploy/market_trend.parquet
 !data/deploy/neighbourhood_profile.parquet
+!data/deploy/subarea_school.parquet
 
 # Local source manifest — maps logical names to licensed, private data files.
 # NEVER commit (keeps real source filenames/paths out of the repo).

@@ -68,14 +68,14 @@ Chen. You have several abilities, all backed by real data:
         assume; they are different markets.
      b) Neighbourhood — which part of the city? A place like Burnaby ranges from
         pricier areas (Metrotown) to cheaper ones, so it matters a lot. If the user
-        is unsure: when they have a BUDGET, call recommend_neighbourhoods (city +
-        type + budget) to suggest real neighbourhoods that fit, ranked by typical
-        price — then let them pick one. Otherwise ask what they care about, offer
-        concrete options with list_neighbourhoods plus city-level context from
-        get_area_profile, and let them choose. (Be honest about your data: you have
-        per-neighbourhood PRICE data and can rank neighbourhoods by budget, plus
-        city-level census facts — but you do NOT yet have per-neighbourhood school
-        or amenity scores, so don't invent them.)
+        is unsure, use recommend_neighbourhoods (city + type): pass a budget
+        (max_price) to rank neighbourhoods that fit by price, or sort_by=schools to
+        rank by nearby school quality (Fraser Institute score, 0-10) — match it to
+        what they care about, then let them pick one. You can also list options with
+        list_neighbourhoods and add city-level context from get_area_profile. (Be
+        honest about your data: you have per-neighbourhood PRICE and SCHOOL scores
+        plus city-level census facts, but not yet commute or amenity scores — don't
+        invent those.)
      c) Size — floor area in square feet (the biggest driver), plus bedrooms and
         bathrooms.
    Only once you have type, a specific neighbourhood, and size should you call
@@ -233,17 +233,19 @@ TOOLS = [
     {
         "name": "recommend_neighbourhoods",
         "description": (
-            "Recommend real neighbourhoods in a city that fit a budget, ranked by typical recent "
-            "price, using per-neighbourhood market data. Use this when the user wants a home in a "
-            "city but is unsure which neighbourhood — especially when they give a budget. Returns "
-            "each neighbourhood's typical price, days-on-market, and recent sales count (a low "
-            "count = thin/less-reliable data)."
+            "Recommend real neighbourhoods in a city, using per-neighbourhood data. Use when the "
+            "user wants a home in a city but is unsure which neighbourhood. Rank by budget "
+            "(sort_by=price, with max_price/min_price) or by school quality (sort_by=schools — "
+            "best nearby Fraser Institute school score, 0-10). Returns each neighbourhood's typical "
+            "price, best/avg school score, days-on-market, and recent sales count (a low count = "
+            "thin/less-reliable data)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "city": {"type": "string", "description": "City/area, e.g. Burnaby, Surrey, Coquitlam"},
                 "property_type": {"type": "string", "description": "house, condo, or townhouse"},
+                "sort_by": {"type": "string", "description": "price (default) or schools"},
                 "max_price": {"type": "number", "description": "Budget ceiling in CAD (optional)"},
                 "min_price": {"type": "number", "description": "Budget floor in CAD (optional)"},
             },
@@ -424,15 +426,15 @@ def _tool_list_neighbourhoods(area_name: str) -> dict:
     return res
 
 
-def _tool_recommend_neighbourhoods(city: str, property_type: str,
+def _tool_recommend_neighbourhoods(city: str, property_type: str, sort_by: str = "price",
                                    max_price: Optional[float] = None,
                                    min_price: Optional[float] = None) -> dict:
     from src.api import main as api
 
     if api.neighbourhood_profiles is None:
-        return {"status": "unavailable", "note": "Neighbourhood price data is not loaded in this deployment."}
+        return {"status": "unavailable", "note": "Neighbourhood data is not loaded in this deployment."}
     return api.neighbourhood_profiles.recommend(
-        city=city, property_type=property_type, max_price=max_price, min_price=min_price)
+        city=city, property_type=property_type, sort_by=sort_by, max_price=max_price, min_price=min_price)
 
 
 def _tool_search(street_number: str, street_name: str, postal_code: Optional[str] = None) -> dict:
