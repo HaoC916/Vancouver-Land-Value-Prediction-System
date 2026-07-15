@@ -10,8 +10,8 @@ Amenities,grocery_count_1km,Grocery/supermarket stores within 1km,subarea,OpenSt
 Amenities,food_count_1km,Restaurants + cafes within 1km,subarea,OSM Overpass,open-free,have_now,amenity=restaurant/cafe/fast_food count within 1km,Built in build_amenities_deploy.py
 Amenities,park_dist_and_count,Distance to nearest park + parks within 1km,subarea,OSM + municipal parks open data,open-free,have_now,leisure=park nearest distance and count,Built (park_count_1km + park_dist_km); city park polygons a future refinement
 Amenities,amenity_density_score,Composite POI density (0-100),subarea,OSM,open-free,have_now,weighted+normalized sum of the POI counts above,"Built as amenity_score (our saturating weighted formula, NOT AreaVibes')"
-Commute,transit_stops_800m,Transit stops within 800m,subarea,TransLink GTFS (open),open-free,collect,count GTFS stops within 800m of centroid,TransLink publishes an open GTFS feed
-Commute,dist_to_rapid_transit,Distance to nearest SkyTrain/SeaBus station,subarea,TransLink GTFS,open-free,collect,nearest rapid-transit station distance,Strong price/commute driver in Metro Van
+Commute,transit_stops_800m,Transit stops within 800m,subarea,TransLink GTFS (open),open-free,have_now,count GTFS stops within 800m of centroid,Built in build_transit_deploy.py -> subarea_transit.parquet (Metro Van only)
+Commute,dist_to_rapid_transit,Distance to nearest SkyTrain/SeaBus station,subarea,TransLink GTFS,open-free,have_now,nearest rapid-transit station distance,"Built (rapid_transit_dist_km + transit_score); route_type 1/2/4 = SkyTrain/WCE/SeaBus"
 Commute,pct_transit_commute,Share commuting by public transit,municipality/DA,StatCan Census 2021 journey-to-work,open-free,partial,census commute mode; municipality now, DA for finer,Have at municipality level today
 Commute,avg_commute_minutes,Median commute duration,municipality/DA,StatCan Census 2021,open-free,partial,census commute-duration table,
 Crime,crimes_per_1000,Crime rate,municipality/neighbourhood,municipal police open data (VPD / Surrey / etc.),open-free,collect,geocoded incidents per capita near subarea,Each city has its own portal + schema; VPD data is point-level

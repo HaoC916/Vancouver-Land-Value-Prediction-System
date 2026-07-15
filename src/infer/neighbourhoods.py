@@ -13,6 +13,7 @@ import pandas as pd
 PROFILE_PATH = Path("data/deploy/neighbourhood_profile.parquet")
 SCHOOL_PATH = Path("data/deploy/subarea_school.parquet")
 AMENITIES_PATH = Path("data/deploy/subarea_amenities.parquet")
+TRANSIT_PATH = Path("data/deploy/subarea_transit.parquet")
 
 TYPE_MAP = {
     "house": "HOUSE", "detached": "HOUSE", "single family": "HOUSE",
@@ -25,7 +26,8 @@ MIN_RELIABLE_SALES = 6  # a year's sales below this → price is thin, flag it
 
 class NeighbourhoodProfiles:
     def __init__(self, path: Path = PROFILE_PATH, school_path: Path = SCHOOL_PATH,
-                 amenities_path: Path = AMENITIES_PATH) -> None:
+                 amenities_path: Path = AMENITIES_PATH,
+                 transit_path: Path = TRANSIT_PATH) -> None:
         if not path.exists():
             self.df = None
             return
@@ -34,9 +36,12 @@ class NeighbourhoodProfiles:
             df = df.merge(pd.read_parquet(school_path), on="region_id", how="left")
         if amenities_path.exists():
             df = df.merge(pd.read_parquet(amenities_path), on="region_id", how="left")
+        if transit_path.exists():
+            df = df.merge(pd.read_parquet(transit_path), on="region_id", how="left")
         for c in ("best_school_score", "avg_school_score", "school_count",
                   "amenity_score", "grocery_count_1km", "food_count_1km",
-                  "park_count_1km", "health_count_2km", "hospital_dist_km"):
+                  "park_count_1km", "health_count_2km", "hospital_dist_km",
+                  "transit_score", "transit_stops_800m", "rapid_transit_dist_km"):
             if c not in df.columns:
                 df[c] = None
         self.df = df
@@ -96,6 +101,18 @@ class NeighbourhoodProfiles:
             else:
                 d = d.sort_values("median_price")
                 note = "No amenity scores for these neighbourhoods yet — showing by price instead."
+        elif key.startswith("commut") or key.startswith("transit"):
+            withtransit = d[d["transit_score"].notna()]
+            if not withtransit.empty:
+                d = withtransit.sort_values("transit_score", ascending=False)
+                mode = "commute"
+                note = ("Ranked by transit/commute score (0-100, our own measure from TransLink "
+                        "GTFS: walkable stop density + distance to rapid transit — SkyTrain, "
+                        "SeaBus, West Coast Express). Covers Metro Vancouver only; price shown too.")
+            else:
+                d = d.sort_values("median_price")
+                note = ("No transit scores for these neighbourhoods (Metro Vancouver only) — "
+                        "showing by price instead.")
         else:
             d = d.sort_values("median_price")
 
@@ -114,6 +131,9 @@ class NeighbourhoodProfiles:
             "food_count_1km": i_(r["food_count_1km"]),
             "park_count_1km": i_(r["park_count_1km"]),
             "health_count_2km": i_(r["health_count_2km"]),
+            "transit_score": s(r["transit_score"]),
+            "transit_stops_800m": i_(r["transit_stops_800m"]),
+            "rapid_transit_dist_km": s(r["rapid_transit_dist_km"]),
             "median_days_on_market": None if pd.isna(r["median_dom"]) else int(r["median_dom"]),
             "sales_last_12m": int(r["sold_12m"]),
         } for _, r in d.head(limit).iterrows()]
