@@ -252,7 +252,8 @@ TOOLS = [
             "Commute, safety and livability cover Metro Vancouver only. Returns each neighbourhood's "
             "typical price, school score, amenity score (with POI counts), transit score, safety "
             "score (with the city crime rate it's based on), livability score, days-on-market, and "
-            "recent sales count (a low count = thin/less-reliable data)."
+            "recent sales count (a low count = thin/less-reliable data). The safety result "
+            "includes safety_year — cite that year for the crime rate; don't guess it."
         ),
         "input_schema": {
             "type": "object",

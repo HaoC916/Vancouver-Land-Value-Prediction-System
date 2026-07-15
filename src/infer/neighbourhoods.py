@@ -24,6 +24,43 @@ SAFETY_PATH = Path("data/deploy/subarea_safety.parquet")
 LIVABILITY_WEIGHTS = {"amenity_score": 0.30, "transit_score": 0.25,
                       "safety_score": 0.25, "school100": 0.20}
 
+# City → the exact MLS "area" names it covers, for the irregular cases the generic word-prefix
+# rule (below) can't get right: groupings whose subareas don't start with the city name, and
+# collision guards where the city name is a word-prefix of a DIFFERENT municipality. Everything
+# else (Vancouver≠North/West Vancouver, Coquitlam≠Port Coquitlam, Toronto's districts, etc.) is
+# handled by the generic rule in _match_city, so it stays out of here.
+CITY_TO_AREAS = {
+    # groupings (subareas don't begin with the city name)
+    "surrey": ["North Surrey", "Surrey", "South Surrey White Rock", "Cloverdale"],
+    "delta": ["N. Delta", "Ladner", "Tsawwassen"],
+    "chilliwack": ["Chilliwack", "East Chilliwack"],
+    # collision guards (city name is a word-prefix of a different municipality)
+    "richmond": ["Richmond"],   # BC Richmond, NOT Richmond Hill (ON)
+    "georgina": ["Georgina"],   # NOT Georgina Islands (ON)
+    # convenience aliases for common sub-names
+    "white rock": ["South Surrey White Rock"],
+    "south surrey": ["South Surrey White Rock"],
+    "north delta": ["N. Delta"],
+}
+
+
+def _match_city(area_names, city: str) -> set[str] | None:
+    """Area names belonging to `city`. None = no city given (no filter).
+
+    Word-aware, not substring: an area matches when it equals the city or is "<city> <suffix>"
+    (Vancouver West, Burnaby South, Toronto C08). So "Vancouver" excludes North/West Vancouver
+    and "Coquitlam" excludes Port Coquitlam. Irregular BC groupings/collisions use CITY_TO_AREAS.
+    """
+    needle = str(city or "").strip().lower()
+    if not needle:
+        return None
+    if needle in CITY_TO_AREAS:
+        allowed = set(CITY_TO_AREAS[needle])
+        return {a for a in area_names if a in allowed}
+    return {a for a in area_names
+            if a.lower() == needle or a.lower().startswith(needle + " ")}
+
+
 TYPE_MAP = {
     "house": "HOUSE", "detached": "HOUSE", "single family": "HOUSE",
     "condo": "APTU", "apartment": "APTU", "apt": "APTU", "aptu": "APTU",
@@ -49,7 +86,7 @@ class NeighbourhoodProfiles:
                   "amenity_score", "grocery_count_1km", "food_count_1km",
                   "park_count_1km", "health_count_2km", "hospital_dist_km",
                   "transit_score", "transit_stops_800m", "rapid_transit_dist_km",
-                  "safety_score", "crime_rate_per_100k", "safety_basis"):
+                  "safety_score", "crime_rate_per_100k", "safety_basis", "safety_year"):
             if c not in df.columns:
                 df[c] = None
         self.df = self._add_livability(df)
@@ -82,9 +119,9 @@ class NeighbourhoodProfiles:
         if self.df is None:
             return {"status": "unavailable"}
         d = self.df
-        needle = str(city or "").strip().lower()
-        if needle:
-            d = d[d["area_name"].str.lower().str.contains(needle, na=False)]
+        allowed = _match_city(d["area_name"].dropna().unique(), city)
+        if allowed is not None:
+            d = d[d["area_name"].isin(allowed)]
         if d.empty:
             return {"status": "no_city", "note": f"No neighbourhoods found for '{city}'."}
 
@@ -192,6 +229,7 @@ class NeighbourhoodProfiles:
             "safety_score": s(r["safety_score"]),
             "crime_rate_per_100k": s(r["crime_rate_per_100k"]),
             "safety_basis": None if pd.isna(r["safety_basis"]) else str(r["safety_basis"]),
+            "safety_year": i_(r["safety_year"]),
             "livability_score": s(r["livability_score"]),
             "median_days_on_market": None if pd.isna(r["median_dom"]) else int(r["median_dom"]),
             "sales_last_12m": int(r["sold_12m"]),
