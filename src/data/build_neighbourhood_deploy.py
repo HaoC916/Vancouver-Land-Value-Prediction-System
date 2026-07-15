@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.data._scope import GREATER_VANCOUVER_AREAS
+
 # Detached / condo(apartment) / townhouse.
 TYPES = {"HOUSE", "APTU", "TWIN"}
 
@@ -25,6 +27,7 @@ def build(in_path: Path, out_path: Path, months: int) -> pd.DataFrame:
     df = pd.read_csv(in_path)
     df = df[df["property_type"].isin(TYPES)].copy()
     df = df[df["subarea_name"].notna() & df["area_name"].notna()].copy()
+    df = df[df["area_name"].isin(GREATER_VANCOUVER_AREAS)].copy()  # Greater Van + Fraser Valley only
     df["period_start"] = pd.to_datetime(df["period_start"], errors="coerce")
     for c in ["median_sold_price", "median_list_price", "median_dom", "sold_count"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")

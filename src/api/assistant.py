@@ -1,9 +1,10 @@
 """AI assistant for the property-value demo — a Claude tool-use agent loop.
 
 POST /assistant/chat receives the visible conversation history and runs a
-tool-use loop: the model can resolve City of Vancouver addresses, run the
-value model, and look up 2021 census profiles for Greater Vancouver / Greater
-Toronto municipalities. Only available when ANTHROPIC_API_KEY is set (the
+tool-use loop: the model can estimate market list prices and City of Vancouver
+assessed values, recommend neighbourhoods, and look up 2021 census profiles and
+market trends across Greater Vancouver and the Fraser Valley. Only available
+when ANTHROPIC_API_KEY is set (the
 Hugging Face Space secret); without it /assistant/status reports offline and
 the frontend falls back to the scripted chat flow.
 """
@@ -47,23 +48,20 @@ SYSTEM_PROMPT = """\
 You are the built-in assistant of a property-value demo web app built by Ryan
 Chen. You have several abilities, all backed by real data:
 
-1. Property value estimates — a machine-learning model trained on City of
-   Vancouver property-tax assessment records. Use estimate_property_value with
-   a street number and street name (unit number for condos). IMPORTANT scope:
-   only addresses inside the City of Vancouver work. Burnaby, Richmond, Surrey,
-   Toronto etc. are NOT in the assessment data — for those you can only offer
-   census facts. Estimates are model estimates of assessed value (land plus
-   building), not appraisals or sale prices; always mention the likely range.
+1. Home value estimates — everything below covers Greater Vancouver and the
+   Fraser Valley (Vancouver, Burnaby, Surrey, Richmond, Coquitlam and the
+   Tri-Cities, the North Shore, Delta, Langley, Maple Ridge/Pitt Meadows,
+   Abbotsford, Chilliwack, Mission, ...). The product does not cover Ontario or
+   anywhere outside this region — if asked about elsewhere, say so plainly.
 
-   Market list price — a second machine-learning model that estimates what a
-   home would LIST for today from its features (property type, bedrooms,
-   bathrooms, floor area, neighbourhood) across Greater Vancouver and the Fraser
-   Valley. Use estimate_market_price. It is NOT looked up by address — it is
-   driven by property features, so gather them first. Never call it with guessed
-   or default values, and never answer a vague question ("what's a Burnaby condo
-   worth?") with one number — prices depend heavily on type, size and
-   neighbourhood, so ask a couple of quick questions first (keep it natural, one
-   or two at a time, not a form):
+   Market list price is the main estimate: estimate_market_price predicts what a
+   home would LIST for today from its features (property type, floor area,
+   bedrooms, bathrooms, neighbourhood). It works for EVERY city in the region, not
+   just Vancouver. It is feature-driven, NOT looked up by address, so gather the
+   features first. Never call it with guessed or default values, and never answer
+   a vague question ("what's a Burnaby condo worth?") with one number — prices
+   depend heavily on type, size and neighbourhood, so ask a couple of quick
+   questions first (keep it natural, one or two at a time, not a form):
      a) Property type — house/detached, condo/apartment, or townhouse? Ask, don't
         assume; they are different markets.
      b) Neighbourhood — which part of the city? A place like Burnaby ranges from
@@ -87,24 +85,29 @@ Chen. You have several abilities, all backed by real data:
         bathrooms.
    Only once you have type, a specific neighbourhood, and size should you call
    estimate_market_price. Give the likely range; it's a model estimate of list
-   price, not a guaranteed sale price. Shortcut: if the user gives a precise City
-   of Vancouver street address, you can also offer the assessed value via
-   estimate_property_value.
+   price, not a guaranteed sale price.
 
-2. Neighbourhood facts — 2021 Canadian census profiles for 65 municipalities
-   across Greater Vancouver and the Greater Toronto Area (population, income,
-   home values, ownership rates, immigration, commuting, and more). Use
-   get_area_profile; some names (North Vancouver, Langley) match two
-   municipalities — present both. This is a 2021 snapshot; say so when asked
-   about "now".
+   If the user gives a street ADDRESS (in any city in the region), don't dead-end:
+   read the city and neighbourhood off it (e.g. "6463 Silver Ave, Burnaby" →
+   Metrotown) and use that as the neighbourhood, then you just need type and size
+   for a market-price estimate. As a BONUS, for City of Vancouver street addresses
+   only, estimate_property_value returns the BC-assessment value (land + building)
+   by address — that one tool is Vancouver-only, but never tell the user you
+   "can't" help with a Burnaby/Surrey/etc. address: you can, via market price.
+
+2. Neighbourhood facts — 2021 Canadian census profiles for 38 Greater Vancouver
+   and Fraser Valley municipalities (population, income, home values, ownership
+   rates, immigration, commuting, and more). Use get_area_profile; some names
+   (North Vancouver, Langley) match two municipalities — present both. This is a
+   2021 snapshot; say so when asked about "now".
 
 3. Market trends — monthly community-level resale market data (new listings,
    sales, average sold prices, days on market) from May 2021 to May 2026 for
-   177 real-estate-board areas around Greater Vancouver, the Greater Toronto
-   Area, and nearby cities. Use get_market_trend. Area names follow board
-   conventions: "Vancouver West"/"Vancouver East", "Burnaby North/South/East",
-   "Toronto C01".."W10" districts — a partial name like "Burnaby" matches all
-   its parts. These are aggregate monthly figures, not individual listings.
+   33 real-estate-board areas across Greater Vancouver and the Fraser Valley. Use
+   get_market_trend. Area names follow board conventions: "Vancouver West"/
+   "Vancouver East", "Burnaby North/South/East", "North Surrey", "Abbotsford" —
+   a partial name like "Burnaby" matches all its parts. These are aggregate
+   monthly figures, not individual listings.
 
 Rules:
 - Amounts are CAD. Reply in plain text only — no markdown, no asterisks.
@@ -179,10 +182,12 @@ TOOLS = [
     {
         "name": "estimate_property_value",
         "description": (
-            "Estimate the assessed value of a City of Vancouver property. Give the "
-            "street/building number and street name (e.g. 1128 and HASTINGS ST W). "
-            "If the result is need_unit, ask the user for their unit number and call "
-            "again with it. Returns the estimate plus property facts on success."
+            "Estimate the BC-assessment value of a CITY OF VANCOUVER property by address "
+            "(a bonus that works only inside the City of Vancouver). Give the street/building "
+            "number and street name (e.g. 1128 and HASTINGS ST W). If the result is need_unit, "
+            "ask the user for their unit number and call again with it. For addresses in any "
+            "OTHER city (Burnaby, Surrey, Richmond, ...), do NOT use this — use "
+            "estimate_market_price with the address's neighbourhood instead."
         ),
         "input_schema": {
             "type": "object",
@@ -288,10 +293,10 @@ TOOLS = [
         "name": "get_area_profile",
         "description": (
             "Get the 2021 census profile of a municipality in Greater Vancouver or the "
-            "Greater Toronto Area: population, density, ages, household income, average "
-            "home value, owner/renter/condo shares, immigrant share, education, transit "
-            "commuting. Match is by name (e.g. Burnaby, Richmond Hill); may return more "
-            "than one municipality for ambiguous names."
+            "Fraser Valley: population, density, ages, household income, average home value, "
+            "owner/renter/condo shares, immigrant share, education, transit commuting. Match "
+            "is by name (e.g. Burnaby, Surrey, Abbotsford); may return more than one "
+            "municipality for ambiguous names."
         ),
         "input_schema": {
             "type": "object",
@@ -303,7 +308,7 @@ TOOLS = [
     },
     {
         "name": "list_census_areas",
-        "description": "List the 65 municipalities that have census profiles, grouped by region.",
+        "description": "List the 38 Greater Vancouver / Fraser Valley municipalities that have census profiles.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {

@@ -53,6 +53,8 @@ def split_geo_name(geo_name: str) -> tuple[str, str]:
 def main() -> None:
     df = pd.read_csv(SOURCE, usecols=lambda c: c != "profile_json", low_memory=False)
     csd = df[df["geo_level"] == "CSD"].copy()
+    # Scope to Greater Vancouver only (the product no longer covers the GTA).
+    csd = csd[csd["source_region"] == "greater_vancouver"].copy()
 
     records = []
     for _, row in csd.iterrows():
@@ -61,9 +63,7 @@ def main() -> None:
             "name": name,
             "kind": kind,
             "full_name": row["geo_name"],
-            "region": "Greater Vancouver"
-            if row["source_region"] == "greater_vancouver"
-            else "Greater Toronto Area",
+            "region": "Greater Vancouver",
             "census_year": int(row["census_year"]),
         }
         for col in NUMERIC_COLUMNS:

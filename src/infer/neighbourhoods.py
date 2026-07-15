@@ -27,8 +27,8 @@ LIVABILITY_WEIGHTS = {"amenity_score": 0.30, "transit_score": 0.25,
 # City → the exact MLS "area" names it covers, for the irregular cases the generic word-prefix
 # rule (below) can't get right: groupings whose subareas don't start with the city name, and
 # collision guards where the city name is a word-prefix of a DIFFERENT municipality. Everything
-# else (Vancouver≠North/West Vancouver, Coquitlam≠Port Coquitlam, Toronto's districts, etc.) is
-# handled by the generic rule in _match_city, so it stays out of here.
+# else (Vancouver≠North/West Vancouver, Coquitlam≠Port Coquitlam, "Burnaby"→Burnaby N/S/E, etc.)
+# is handled by the generic rule in _match_city, so it stays out of here.
 CITY_TO_AREAS = {
     # groupings (subareas don't begin with the city name)
     "surrey": ["North Surrey", "Surrey", "South Surrey White Rock", "Cloverdale"],
@@ -48,7 +48,7 @@ def _match_city(area_names, city: str) -> set[str] | None:
     """Area names belonging to `city`. None = no city given (no filter).
 
     Word-aware, not substring: an area matches when it equals the city or is "<city> <suffix>"
-    (Vancouver West, Burnaby South, Toronto C08). So "Vancouver" excludes North/West Vancouver
+    (Vancouver West, Burnaby South, Vancouver East). So "Vancouver" excludes North/West Vancouver
     and "Coquitlam" excludes Port Coquitlam. Irregular BC groupings/collisions use CITY_TO_AREAS.
     """
     needle = str(city or "").strip().lower()

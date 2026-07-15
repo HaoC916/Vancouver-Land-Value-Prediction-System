@@ -91,9 +91,9 @@ const GREETING =
   "For example: 1128 Hastings St W. You can add a postal code too, e.g. 1128 Hastings St W, V6E 4R5.";
 
 const AGENT_GREETING =
-  "Hi! I'm a real-estate chat assistant for the Vancouver area. Ask me anything " +
-  "property-related — what a home might be worth, how a market is trending, or what a " +
-  "neighbourhood around Vancouver or Toronto is like.";
+  "Hi! I'm a real-estate chat assistant for Greater Vancouver and the Fraser Valley. " +
+  "Ask me anything property-related — what a home might be worth, how a market is trending, " +
+  "or which neighbourhoods fit your budget, schools, commute or safety.";
 
 const AGENT_SUGGESTIONS = [
   "What would a 900 sq ft condo in Richmond list for?",
