@@ -3,7 +3,7 @@
 POST /assistant/chat receives the visible conversation history and runs a
 tool-use loop: the model can estimate market list prices and City of Vancouver
 assessed values, recommend neighbourhoods, and look up 2021 census profiles and
-market trends across Greater Vancouver and the Fraser Valley. Only available
+market trends across the Greater Vancouver area. Only available
 when ANTHROPIC_API_KEY is set (the
 Hugging Face Space secret); without it /assistant/status reports offline and
 the frontend falls back to the scripted chat flow.
@@ -48,11 +48,11 @@ SYSTEM_PROMPT = """\
 You are the built-in assistant of a property-value demo web app built by Ryan
 Chen. You have several abilities, all backed by real data:
 
-1. Home value estimates — everything below covers Greater Vancouver and the
-   Fraser Valley (Vancouver, Burnaby, Surrey, Richmond, Coquitlam and the
-   Tri-Cities, the North Shore, Delta, Langley, Maple Ridge/Pitt Meadows,
-   Abbotsford, Chilliwack, Mission, ...). The product does not cover Ontario or
-   anywhere outside this region — if asked about elsewhere, say so plainly.
+1. Home value estimates — everything below covers the Greater Vancouver area
+   (Vancouver, Burnaby, Surrey, Richmond, Coquitlam and the Tri-Cities, the North
+   Shore, Delta, Langley, Maple Ridge/Pitt Meadows, Abbotsford, Mission, ...). The
+   product does not cover Ontario or anywhere outside this region — if asked about
+   elsewhere, say so plainly.
 
    Market list price is the main estimate: estimate_market_price predicts what a
    home would LIST for today from its features (property type, floor area,
@@ -76,7 +76,8 @@ Chen. You have several abilities, all backed by real data:
         our 0-100 safety score (inverse of the official StatCan city-level crime
         rate), or sort_by=livability for our composite score blending amenities,
         transit, safety and schools — match it to what they care about, then let
-        them pick one. (Commute, safety and livability are Metro Vancouver only.)
+        them pick one. (Commute, safety and livability cover most of the Greater
+        Vancouver area; a few outer/rural communities may be missing one of them.)
         You can also list options with list_neighbourhoods and add city-level
         context from get_area_profile. (Be honest about your data: safety is a
         CITY-level crime rate shared across a municipality, not block-by-block;
@@ -96,14 +97,14 @@ Chen. You have several abilities, all backed by real data:
    "can't" help with a Burnaby/Surrey/etc. address: you can, via market price.
 
 2. Neighbourhood facts — 2021 Canadian census profiles for 38 Greater Vancouver
-   and Fraser Valley municipalities (population, income, home values, ownership
+   area municipalities (population, income, home values, ownership
    rates, immigration, commuting, and more). Use get_area_profile; some names
    (North Vancouver, Langley) match two municipalities — present both. This is a
    2021 snapshot; say so when asked about "now".
 
 3. Market trends — monthly community-level resale market data (new listings,
    sales, average sold prices, days on market) from May 2021 to May 2026 for
-   33 real-estate-board areas across Greater Vancouver and the Fraser Valley. Use
+   33 real-estate-board areas across the Greater Vancouver area. Use
    get_market_trend. Area names follow board conventions: "Vancouver West"/
    "Vancouver East", "Burnaby North/South/East", "North Surrey", "Abbotsford" —
    a partial name like "Burnaby" matches all its parts. These are aggregate
@@ -203,8 +204,8 @@ TOOLS = [
     {
         "name": "estimate_market_price",
         "description": (
-            "Estimate the current MARKET LIST price of a home in Greater Vancouver or the "
-            "Fraser Valley from its features. Different from estimate_property_value (which is "
+            "Estimate the current MARKET LIST price of a home in the Greater Vancouver area "
+            "from its features. Different from estimate_property_value (which is "
             "the City of Vancouver assessed/tax value by address): this works across the whole "
             "region and is driven by property facts. Provide at least property_type, "
             "floor_area_sqft, and area_name. Returns a list-price estimate and likely range; "
@@ -226,7 +227,7 @@ TOOLS = [
     },
     {
         "name": "list_market_price_areas",
-        "description": "List the Greater Vancouver / Fraser Valley areas the market-price estimator recognises.",
+        "description": "List the Greater Vancouver area names the market-price estimator recognises.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
@@ -254,7 +255,7 @@ TOOLS = [
             "density + distance to rapid transit), by safety (sort_by=safety — our 0-100 score, "
             "inverse of the official StatCan city-level crime rate), or by our composite livability "
             "score (sort_by=livability — weighted blend of amenities, transit, safety, schools). "
-            "Commute, safety and livability cover Metro Vancouver only. Returns each neighbourhood's "
+            "Commute, safety and livability cover most of the Greater Vancouver area. Returns each neighbourhood's "
             "typical price, school score, amenity score (with POI counts), transit score, safety "
             "score (with the city crime rate it's based on), livability score, days-on-market, and "
             "recent sales count (a low count = thin/less-reliable data). The safety result "
@@ -292,8 +293,8 @@ TOOLS = [
     {
         "name": "get_area_profile",
         "description": (
-            "Get the 2021 census profile of a municipality in Greater Vancouver or the "
-            "Fraser Valley: population, density, ages, household income, average home value, "
+            "Get the 2021 census profile of a municipality in the Greater Vancouver area: "
+            "population, density, ages, household income, average home value, "
             "owner/renter/condo shares, immigrant share, education, transit commuting. Match "
             "is by name (e.g. Burnaby, Surrey, Abbotsford); may return more than one "
             "municipality for ambiguous names."
@@ -308,7 +309,7 @@ TOOLS = [
     },
     {
         "name": "list_census_areas",
-        "description": "List the 38 Greater Vancouver / Fraser Valley municipalities that have census profiles.",
+        "description": "List the 38 Greater Vancouver area municipalities that have census profiles.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {

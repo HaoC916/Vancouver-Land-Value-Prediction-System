@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Stream-filter the StatCan 35-10-0184 bulk CSV (inside its zip) down to
-Metro Vancouver policing jurisdictions, without extracting the full ~GB CSV.
+"""Stream-filter the StatCan 35-10-0184 bulk CSV (inside its zip) down to the
+Greater Vancouver + Fraser Valley policing jurisdictions, without extracting the
+full ~GB CSV.
 
 Keeps every row whose GEO contains one of the municipality names below
 (this also picks up e.g. Metro Vancouver Transit Police — see README).
-Writes data/raw/crime/statcan/35100184_metro_van_subset.csv and prints the
+Writes data/raw/crime/statcan/35100184_greater_van_subset.csv and prints the
 distinct GEO values kept, for verification.
 
 Run from the repo root:  python -m src.data.crime_filter_statcan
@@ -16,12 +17,15 @@ from pathlib import Path
 
 STATCAN = Path("data/raw/crime/statcan")
 ZIP_PATH = STATCAN / "35100184-eng.zip"
-OUT_PATH = STATCAN / "35100184_metro_van_subset.csv"
+OUT_PATH = STATCAN / "35100184_greater_van_subset.csv"
 
 NAMES = [
+    # Metro Vancouver
     "Vancouver", "Burnaby", "Richmond", "Surrey", "Langley", "Coquitlam",
     "North Vancouver", "West Vancouver", "Delta", "New Westminster",
     "Port Moody", "Maple Ridge", "White Rock", "Pitt Meadows",
+    # Fraser Valley
+    "Abbotsford", "Chilliwack", "Mission", "Kent", "Hope", "Agassiz", "Harrison",
 ]
 
 kept = 0

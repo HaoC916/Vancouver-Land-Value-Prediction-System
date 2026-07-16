@@ -95,7 +95,7 @@ class NeighbourhoodProfiles:
     def _add_livability(df: pd.DataFrame) -> pd.DataFrame:
         """Composite 0-100 livability = weighted blend of amenity/transit/safety/school
         sub-scores, over whichever are present (weights renormalised). Only assigned where
-        amenity+transit+safety are all present (Metro Van), so it isn't a partial GTA score."""
+        amenity+transit+safety are all present, so it isn't a partial score for outer areas."""
         vals = {
             "amenity_score": pd.to_numeric(df["amenity_score"], errors="coerce"),
             "transit_score": pd.to_numeric(df["transit_score"], errors="coerce"),
@@ -173,13 +173,13 @@ class NeighbourhoodProfiles:
             if not withtransit.empty:
                 d = withtransit.sort_values("transit_score", ascending=False)
                 mode = "commute"
-                note = ("Ranked by transit/commute score (0-100, our own measure from TransLink "
+                note = ("Ranked by transit/commute score (0-100, our own measure from open transit "
                         "GTFS: walkable stop density + distance to rapid transit — SkyTrain, "
-                        "SeaBus, West Coast Express). Covers Metro Vancouver only; price shown too.")
+                        "SeaBus, West Coast Express). Covers the Greater Vancouver area; price shown too.")
             else:
                 d = d.sort_values("median_price")
-                note = ("No transit scores for these neighbourhoods (Metro Vancouver only) — "
-                        "showing by price instead.")
+                note = ("No transit scores for these neighbourhoods (some outer/rural areas lack "
+                        "transit data) — showing by price instead.")
         elif key.startswith("saf") or key.startswith("crime"):
             withsafety = d[d["safety_score"].notna()]
             if not withsafety.empty:
@@ -188,23 +188,22 @@ class NeighbourhoodProfiles:
                 note = ("Ranked by safety score (0-100, higher = safer; our own inverse of the "
                         "official StatCan city-level crime rate per 100,000). This is a "
                         "CITY-level rate shared by all neighbourhoods in a municipality, not "
-                        "block-by-block. Metro Vancouver municipalities only; price shown too.")
+                        "block-by-block. Covers the Greater Vancouver area; price shown too.")
             else:
                 d = d.sort_values("median_price")
-                note = ("No safety scores for these neighbourhoods (Metro Vancouver only) — "
-                        "showing by price instead.")
+                note = ("No safety scores for these neighbourhoods — showing by price instead.")
         elif key.startswith("livab") or key.startswith("overall") or key.startswith("best"):
             withliv = d[d["livability_score"].notna()]
             if not withliv.empty:
                 d = withliv.sort_values("livability_score", ascending=False)
                 mode = "livability"
                 note = ("Ranked by our composite livability score (0-100): a weighted blend of "
-                        "amenities, transit, safety and schools. Metro Vancouver only (needs all "
-                        "sub-scores); price shown too so you can weigh it against cost.")
+                        "amenities, transit, safety and schools. Covers the Greater Vancouver area "
+                        "(needs all sub-scores); price shown too so you can weigh it against cost.")
             else:
                 d = d.sort_values("median_price")
-                note = ("No livability scores for these neighbourhoods (Metro Vancouver only) — "
-                        "showing by price instead.")
+                note = ("No livability scores for these neighbourhoods (some outer/rural areas lack "
+                        "a sub-score) — showing by price instead.")
         else:
             d = d.sort_values("median_price")
 

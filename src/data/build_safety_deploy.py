@@ -30,6 +30,7 @@ Run:  python -m src.data.build_safety_deploy
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 
 import numpy as np
@@ -41,16 +42,20 @@ V_PROPERTY = "Total property crime violations [200]"
 RATE_STAT = "Rate per 100,000 population"
 COUNT_STAT = "Actual incidents"
 
-# Our-own linear inverse scale for the total crime rate → safety_score (documented, not
-# AreaVibes'): a rate of SAFE_RATE/100k or below scores 100; UNSAFE_RATE/100k or above → 0.
-# Tuned to the Metro Van municipal range (~2900 safest to ~10000 highest).
+# Our-own LOG inverse scale for the total crime rate → safety_score (documented, not
+# AreaVibes'): a rate of SAFE_RATE/100k or below scores 100; UNSAFE_RATE/100k or above → 0,
+# log-spaced between. Log (not linear) because Greater-Van rates span an order of magnitude —
+# safe suburbs ~2900/100k up to small Fraser Valley highway towns >20000/100k — so a linear
+# scale would clamp every high city to 0. Roughly: Port Moody ~92, Vancouver ~55, Chilliwack
+# ~22, Hope (extreme) → 0.
 SAFE_RATE = 2500.0
-UNSAFE_RATE = 9000.0
+UNSAFE_RATE = 18000.0
 
 # Our MLS "area" names → StatCan jurisdiction DGUID code(s). Multi-code areas (e.g. North
 # Vancouver = City + District) are combined population-weighted. DGUID codes are unambiguous
 # (avoid the municipal/rural GEO-string duplicates). See docs/crime_data_sources.md.
 AREA_TO_CODES: dict[str, list[int]] = {
+    # Metro Vancouver
     "Vancouver West": [59023], "Vancouver East": [59023],
     "Burnaby East": [59703], "Burnaby North": [59703], "Burnaby South": [59703],
     "Richmond": [59711],
@@ -63,6 +68,13 @@ AREA_TO_CODES: dict[str, list[int]] = {
     "Delta": [59004], "N. Delta": [59004], "Ladner": [59004], "Tsawwassen": [59004],
     "Langley": [59930, 59731],  # City + Township (pop-weighted)
     "Maple Ridge": [59727], "Pitt Meadows": [59818],
+    # Fraser Valley
+    "Abbotsford": [59009],
+    "Mission": [59734],
+    "Chilliwack": [59724], "East Chilliwack": [59724], "Sardis": [59724],
+    "Yarrow": [59724], "Cultus Lake & Area": [59724],
+    "Agassiz": [59029], "Harrison Lake": [59029],  # Kent / Agassiz RCMP
+    "Hope & Area": [59749],
 }
 BASIS_NAME = {
     59023: "Vancouver", 59703: "Burnaby", 59711: "Richmond", 59705: "Coquitlam",
@@ -70,12 +82,20 @@ BASIS_NAME = {
     59706: "North Vancouver", 59707: "North Vancouver", 59026: "West Vancouver",
     59704: "Surrey", 59004: "Delta", 59727: "Maple Ridge", 59818: "Pitt Meadows",
     59930: "Langley", 59731: "Langley", 59880: "White Rock",
+    59009: "Abbotsford", 59734: "Mission", 59724: "Chilliwack",
+    59029: "Kent (Agassiz)", 59749: "Hope",
 }
 
 
+_LOG_SAFE = math.log(SAFE_RATE)
+_LOG_SPAN = math.log(UNSAFE_RATE) - _LOG_SAFE
+
+
 def _safety_score(rate: float) -> float:
-    return round(float(np.clip(100.0 * (UNSAFE_RATE - rate) / (UNSAFE_RATE - SAFE_RATE),
-                               0.0, 100.0)), 1)
+    if rate <= 0:
+        return 100.0
+    frac = (math.log(rate) - _LOG_SAFE) / _LOG_SPAN  # 0 at SAFE_RATE, 1 at UNSAFE_RATE
+    return round(float(np.clip(100.0 * (1.0 - frac), 0.0, 100.0)), 1)
 
 
 def _municipal_rates(statcan_path: Path, year: int) -> dict[int, dict]:
@@ -154,7 +174,7 @@ def build(statcan_path: Path, lookup_path: Path, out_path: Path, year: int) -> p
 def main() -> None:
     p = argparse.ArgumentParser(description="Build the per-neighbourhood safety lookup (StatCan).")
     p.add_argument("--statcan_path",
-                   default="data/raw/crime/statcan/35100184_metro_van_subset.csv")
+                   default="data/raw/crime/statcan/35100184_greater_van_subset.csv")
     p.add_argument("--lookup_path", default="data/processed/community_region_lookup.csv")
     p.add_argument("--out_path", default="data/deploy/subarea_safety.parquet")
     p.add_argument("--year", type=int, default=2024)
