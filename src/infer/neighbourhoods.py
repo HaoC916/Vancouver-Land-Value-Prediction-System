@@ -113,17 +113,17 @@ class NeighbourhoodProfiles:
         df["livability_score"] = liv
         return df
 
-    def recommend(self, city: str, property_type: str | None = None,
+    def recommend(self, city: str | None = None, property_type: str | None = None,
                   max_price: float | None = None, min_price: float | None = None,
                   sort_by: str = "price", limit: int = 8) -> dict[str, Any]:
         if self.df is None:
             return {"status": "unavailable"}
         d = self.df
         allowed = _match_city(d["area_name"].dropna().unique(), city)
-        if allowed is not None:
+        if allowed is not None:  # None = no city given → recommend region-wide
             d = d[d["area_name"].isin(allowed)]
-        if d.empty:
-            return {"status": "no_city", "note": f"No neighbourhoods found for '{city}'."}
+            if d.empty:
+                return {"status": "no_city", "note": f"No neighbourhoods found for '{city}'."}
 
         ptype = TYPE_MAP.get(str(property_type or "").strip().lower())
         if ptype:
@@ -233,7 +233,7 @@ class NeighbourhoodProfiles:
             "median_days_on_market": None if pd.isna(r["median_dom"]) else int(r["median_dom"]),
             "sales_last_12m": int(r["sold_12m"]),
         } for _, r in d.head(limit).iterrows()]
-        return {"status": "ok", "city": city,
+        return {"status": "ok", "city": city or "Greater Vancouver area (region-wide)",
                 "property_type": TYPE_LABEL.get(ptype, property_type),
                 "sorted_by": mode,
                 "count": len(out), "neighbourhoods": out, "note": note}
