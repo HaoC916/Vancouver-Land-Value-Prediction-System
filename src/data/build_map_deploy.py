@@ -12,7 +12,7 @@ from typing import Any
 
 import pandas as pd
 from shapely import make_valid, wkt
-from shapely.geometry import MultiPolygon, Polygon, mapping
+from shapely.geometry import MultiPolygon, Polygon, box, mapping
 from shapely.ops import unary_union
 
 from src.data._community import (COMMUNITY_BOUNDARY_PATH, COMMUNITY_LOOKUP_PATH,
@@ -25,6 +25,10 @@ MUNICIPALITY_PROFILE_PATH = Path("data/deploy/municipality_profile.parquet")
 SIMPLIFY_TOLERANCE = 0.00006  # roughly 5-7 metres at Greater Vancouver latitudes
 DISPLAY_CLOSE_TOLERANCE = 0.00015  # closes roughly 10-17 metre-wide display slits
 MAX_DISPLAY_AREA_CHANGE_RATIO = 0.001  # never alter a city display area by more than 0.1%
+# The market hierarchy groups rural/natural North Shore areas into these cities. The Cities map is
+# intentionally an urban-market footprint, so trim only the display union; community geometry and
+# every market/livability calculation remain unchanged.
+CITY_DISPLAY_MAX_LATITUDES = {"90": 49.381, "155": 49.381}
 
 
 def _display_municipality_name(name: object) -> str:
@@ -64,6 +68,17 @@ def _close_narrow_slits(geom):
     if area_change > MAX_DISPLAY_AREA_CHANGE_RATIO:
         return geom, False
     return closed, True
+
+
+def _trim_city_display(geom, municipality_id: str):
+    max_latitude = CITY_DISPLAY_MAX_LATITUDES.get(municipality_id)
+    if max_latitude is None:
+        return geom
+    min_x, min_y, max_x, _ = geom.bounds
+    trimmed = geom.intersection(box(min_x - 1.0, min_y - 1.0, max_x + 1.0, max_latitude))
+    if trimmed.is_empty or trimmed.geom_type not in {"Polygon", "MultiPolygon"}:
+        raise ValueError(f"Urban display trim removed municipality {municipality_id}")
+    return _remove_interior_rings(trimmed)
 
 
 def _id(series: pd.Series) -> pd.Series:
@@ -176,6 +191,7 @@ def build(
     cleanup_guard_skipped_ids = []
     for municipality_id, geoms in geometry_groups.items():
         city_geom = unary_union(geoms).simplify(SIMPLIFY_TOLERANCE, preserve_topology=True)
+        city_geom = _trim_city_display(city_geom, municipality_id)
         city_geom, cleanup_applied = _close_narrow_slits(_remove_interior_rings(city_geom))
         if not cleanup_applied:
             cleanup_guard_skipped_ids.append(municipality_id)
@@ -190,6 +206,11 @@ def build(
                     municipality_names.get(municipality_id, "Unknown")
                 ),
                 "geometry_source": "modified_geom_union",
+                "display_scope": (
+                    "urban_market_footprint"
+                    if municipality_id in CITY_DISPLAY_MAX_LATITUDES
+                    else "full_modified_union"
+                ),
                 "community_count": len(ids),
                 "market": market_by_municipality.get(municipality_id, {}),
                 "livability_score": _optional(city_scores.mean()) if city_scores.notna().any() else None,
@@ -214,6 +235,7 @@ def build(
             "cleanup_tolerance_degrees": DISPLAY_CLOSE_TOLERANCE,
             "max_cleanup_area_change_ratio": MAX_DISPLAY_AREA_CHANGE_RATIO,
             "cleanup_guard_skipped_ids": sorted(cleanup_guard_skipped_ids),
+            "city_display_max_latitudes": CITY_DISPLAY_MAX_LATITUDES,
         },
         "features": sorted(municipality_features, key=lambda f: f["properties"]["name"]),
     }

@@ -20,6 +20,19 @@ def _has_interior_rings(geometry):
     raise AssertionError(f"Unexpected map geometry: {geometry['type']}")
 
 
+def _maximum_latitude(geometry):
+    if geometry["type"] == "Polygon":
+        return max(point[1] for ring in geometry["coordinates"] for point in ring)
+    if geometry["type"] == "MultiPolygon":
+        return max(
+            point[1]
+            for polygon in geometry["coordinates"]
+            for ring in polygon
+            for point in ring
+        )
+    raise AssertionError(f"Unexpected map geometry: {geometry['type']}")
+
+
 def test_health():
     r = client.get("/health")
     assert r.status_code == 200
@@ -101,6 +114,7 @@ def test_municipality_map_uses_modified_geometry_unions():
         "interior_rings_removed", "narrow_slits_closed"
     ]
     assert body["metadata"]["max_cleanup_area_change_ratio"] == 0.001
+    assert body["metadata"]["city_display_max_latitudes"] == {"90": 49.381, "155": 49.381}
     assert len(body["features"]) == 21
     assert all(
         feature["properties"]["geometry_source"] == "modified_geom_union"
@@ -111,6 +125,17 @@ def test_municipality_map_uses_modified_geometry_unions():
     assert "Surrey and Whiterock" not in {
         feature["properties"]["name"] for feature in body["features"]
     }
+    north_shore = {
+        feature["properties"]["name"]: feature
+        for feature in body["features"]
+        if feature["properties"]["name"] in {"North Vancouver", "West Vancouver"}
+    }
+    assert set(north_shore) == {"North Vancouver", "West Vancouver"}
+    assert all(
+        feature["properties"]["display_scope"] == "urban_market_footprint"
+        and _maximum_latitude(feature["geometry"]) <= 49.3810001
+        for feature in north_shore.values()
+    )
 
 
 def test_community_map_never_falls_back_to_raw_geometry():

@@ -116,3 +116,10 @@ pre-cleaned shape when closing would be too invasive (currently Chilliwack). Val
 357 community IDs/properties unchanged, all geometries valid, zero interior rings, unchanged total bounds,
 and a maximum city-area change of 0.0348%. Pre-spike backups, checksums, and reviewed cleaned copies are in
 `data/processed/updated/july 20/` and remain ignored/private with the canonical inputs.
+
+West Vancouver and North Vancouver use an urban-focused **Cities-layer display footprint** capped at
+latitude 49.381. This removes the large Furry Creek/Lions Bay/Cypress and Indian Arm natural/rural reaches
+from the city overview while retaining all 34/33 market communities, metrics, and untrimmed Community-layer
+polygons. West Vancouver retains 26.827% and North Vancouver 83.381% of their former display-union area;
+the other 19 city shapes are exactly unchanged. The pre-trim and validated post-trim GeoJSON files are
+checksummed in the July 20 backup manifest.
