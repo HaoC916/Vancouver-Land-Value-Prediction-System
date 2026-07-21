@@ -2,12 +2,24 @@ import { useState } from "react";
 // Import "pages" (components).
 import PreciseMode from "./pages/PreciseMode";
 import FuzzyMode from "./pages/FuzzyMode";
+import MapMode from "./pages/MapMode";
 
-type Page = "precise" | "fuzzy";
+type Page = "precise" | "fuzzy" | "map";
+
+type ChatDraft = {
+  id: number;
+  text: string;
+};
 
 export default function App() {
   // React state: which page is currently selected.
   const [page, setPage] = useState<Page>("precise");
+  const [chatDraft, setChatDraft] = useState<ChatDraft | null>(null);
+
+  function askFromMap(text: string) {
+    setChatDraft({ id: Date.now(), text });
+    setPage("precise");
+  }
 
   // Helper function that returns a Tailwind class string for tabs.
   // If active === true, we use a dark "selected" style.
@@ -91,14 +103,18 @@ export default function App() {
             <button className={tabClass(page === "fuzzy")} onClick={() => setPage("fuzzy")}>
               Search
             </button>
+            <button className={tabClass(page === "map")} onClick={() => setPage("map")}>
+              Map
+            </button>
           </nav>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="mx-auto w-full max-w-6xl px-6 py-8">
-        {page === "precise" && <PreciseMode />}
+        {page === "precise" && <PreciseMode draft={chatDraft} />}
         {page === "fuzzy" && <FuzzyMode />}
+        {page === "map" && <MapMode onAsk={askFromMap} />}
       </main>
     </div>
   );

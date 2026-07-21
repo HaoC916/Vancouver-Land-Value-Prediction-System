@@ -82,3 +82,36 @@ def test_fuzzy_lookup_finds_candidates():
     body = r.json()
     assert body["match_count"] >= 1
     assert len(body["candidates"]) == body["match_count"]
+
+
+def test_municipality_map_uses_modified_geometry_unions():
+    r = client.get("/map/municipalities")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["metadata"]["geometry_source"] == "modified_geom_union_only"
+    assert len(body["features"]) == 21
+    assert all(
+        feature["properties"]["geometry_source"] == "modified_geom_union"
+        for feature in body["features"]
+    )
+
+
+def test_community_map_never_falls_back_to_raw_geometry():
+    r = client.get("/map/communities")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["metadata"]["geometry_source"] == "modified_geom_only"
+    assert body["metadata"]["excluded_missing_modified"] == ["308"]
+    assert len(body["features"]) == 357
+    assert all(
+        feature["properties"]["geometry_source"] == "modified_geom"
+        for feature in body["features"]
+    )
+
+
+def test_community_map_can_filter_by_municipality():
+    r = client.get("/map/communities", params={"municipality": "Burnaby"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["features"]) == 36
+    assert {feature["properties"]["municipality"] for feature in body["features"]} == {"Burnaby"}

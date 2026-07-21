@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 import re
@@ -82,6 +84,34 @@ except Exception:
 # For future improvement, create a pre-processed table.
 #ADDRESS_SOURCE_PATH = Path("data/raw/property-tax-report.csv")
 ADDRESS_SOURCE_PATH = Path("data/deploy/address_lookup.parquet")
+MUNICIPALITY_MAP_PATH = Path("data/deploy/municipality_map.geojson")
+COMMUNITY_MAP_PATH = Path("data/deploy/community_map.geojson")
+
+
+@lru_cache(maxsize=2)
+def _load_map_geojson(path: str) -> dict:
+    source = Path(path)
+    if not source.exists():
+        raise HTTPException(503, "Map data is not available in this deployment")
+    return json.loads(source.read_text(encoding="utf-8"))
+
+
+@app.get("/map/municipalities")
+def map_municipalities():
+    """Modified-geometry-only municipality aggregates for the Map tab."""
+    return _load_map_geojson(str(MUNICIPALITY_MAP_PATH))
+
+
+@app.get("/map/communities")
+def map_communities(municipality: Optional[str] = None):
+    """Modified-geometry-only community boundaries, optionally filtered by municipality."""
+    data = _load_map_geojson(str(COMMUNITY_MAP_PATH))
+    if not municipality:
+        return data
+    needle = str(municipality).strip().lower()
+    features = [feature for feature in data["features"]
+                if str(feature["properties"].get("municipality", "")).lower() == needle]
+    return {"type": "FeatureCollection", "metadata": data.get("metadata", {}), "features": features}
 
 
 # ------------------------------------------------------------

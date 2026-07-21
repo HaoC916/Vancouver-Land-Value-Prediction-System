@@ -5,3 +5,4 @@ httpx>=0.27
 # Market-price model training (train_market_model.py). On macOS also needs the
 # OpenMP runtime: `brew install libomp`.
 lightgbm>=4,<5
+shapely==2.1.2

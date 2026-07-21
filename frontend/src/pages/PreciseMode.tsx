@@ -107,7 +107,11 @@ type AgentChatResponse = {
   estimate: PredictResult | null;
 };
 
-export default function PreciseMode() {
+type PreciseModeProps = {
+  draft?: { id: number; text: string } | null;
+};
+
+export default function PreciseMode({ draft }: PreciseModeProps) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [phase, setPhase] = useState<Phase>("address");
@@ -119,12 +123,21 @@ export default function PreciseMode() {
   // true -> free-form AI agent chat; false -> the scripted address flow.
   const [agentMode, setAgentMode] = useState(false);
   const agentModeRef = useRef(false);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const typingTimerRef = useRef<number | null>(null);
   const pendingAgentMessagesRef = useRef<string[]>([]);
   const isAnimatingRef = useRef(false);
   const hasBootedRef = useRef(false);
+
+  useEffect(() => {
+    if (!draft?.text) return;
+    setAgentMode(true);
+    agentModeRef.current = true;
+    setInput(draft.text);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }, [draft?.id, draft?.text]);
 
   // ---- typewriter: reveal agent messages character by character ----
   function playNextAgentMessage() {
@@ -471,6 +484,7 @@ export default function PreciseMode() {
             {phaseHint && <div className="text-xs text-slate-500">{phaseHint}</div>}
             <div className="flex items-end gap-2">
               <textarea
+                ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 rows={1}
