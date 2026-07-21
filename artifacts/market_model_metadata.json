@@ -1,0 +1,20 @@
+{
+  "target": "listprice",
+  "prediction_note": "Predicts the market LIST price of a residential property; not a guaranteed sale price.",
+  "model_type": "per-segment (detached / attached) target-encoding + price-per-sqft with direct fallback",
+  "features": "property facts + board area + subarea (neighbourhood), geography target-encoded; coordinates excluded to avoid train/serve skew",
+  "train_year_rule": "list_year < 2025",
+  "test_year_rule": "list_year >= 2025",
+  "model_backend": "lightgbm",
+  "metrics": {
+    "median_ape": 0.11604098457299238,
+    "mae": 321241.3897733437,
+    "rmse": 865485.835662168,
+    "robust_mae": 307279.25064951455,
+    "n_train": 135846,
+    "n_test": 121983,
+    "n_features": 31,
+    "model_backend": "lightgbm",
+    "split_year": 2025
+  }
+}

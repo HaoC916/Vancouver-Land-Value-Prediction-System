@@ -49,6 +49,7 @@ data/raw.zip
 !artifacts/
 !artifacts/land_value_model.joblib
 !artifacts/model_metadata.json
+!artifacts/market_model_metadata.json
 
 !data/deploy/
 !data/deploy/address_lookup.parquet

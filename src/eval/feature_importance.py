@@ -27,6 +27,26 @@ def _to_base_feature(name: str) -> str:
 
 
 def _feature_group(base_name: str) -> str:
+    market_location = {"postal_fsa_te", "region_name_te", "subarea_name_te"}
+    market_history = {
+        "prop_prev_list_price", "prop_years_since_prev_list", "prop_has_prev_listing",
+        "area_prev_year_median_list", "area_prev_year_listing_count", "area_prev_year_growth",
+    }
+    market_structure = {
+        "p_yearbuilt", "p_bedinbase", "p_bednobase", "p_bedplus", "p_totalbed",
+        "p_dwellclass", "p_dwelltype", "p_grandtotalfloorarea", "p_floorareamain",
+        "p_totalfloorarea", "sqft_best", "p_fullbath", "p_halfbath", "p_totalbath",
+        "p_totalparking", "p_propertytype", "p_style", "p_view", "p_type",
+        "p_constructiontype", "property_age",
+    }
+    if base_name in market_location:
+        return "market_location"
+    if base_name in market_history:
+        return "market_history"
+    if base_name in market_structure:
+        return "property_structure"
+    if base_name == "list_month":
+        return "market_timing"
     if base_name.startswith("neigh_prev_year_") or base_name.startswith("fsa_prev_year_"):
         return "local_history"
     if (

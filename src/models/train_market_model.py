@@ -3,7 +3,6 @@
 Improvements over the first cut:
   * subarea/neighbourhood granularity — target-encode subarea (e.g. Metrotown,
     Brentwood) as well as the board area, so the model can price neighbourhood premiums
-  * land coordinates (lat/long) as spatial features
   * separate models per property segment (detached vs attached/condo), since their
     price dynamics and price-per-sqft differ structurally
   * price-per-sqft target (per segment) with a shared direct-price fallback for the
@@ -215,7 +214,7 @@ def train(data_path: Path, split_year: int, save: bool) -> dict:
             "target": TARGET_COL,
             "prediction_note": "Predicts the market LIST price of a residential property; not a guaranteed sale price.",
             "model_type": "per-segment (detached / attached) target-encoding + price-per-sqft with direct fallback",
-            "features": "property facts + board area + subarea (neighbourhood) + coordinates, geography target-encoded",
+            "features": "property facts + board area + subarea (neighbourhood), geography target-encoded; coordinates excluded to avoid train/serve skew",
             "train_year_rule": f"{YEAR_COL} < {split_year}", "test_year_rule": f"{YEAR_COL} >= {split_year}",
             "model_backend": backend, "metrics": result,
         }, indent=2), encoding="utf-8")

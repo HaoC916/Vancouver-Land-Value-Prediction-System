@@ -1,0 +1,2 @@
+model,median_ape,mae,rmse,robust_mae,n_train,n_test,n_features,model_backend,split_year
+market_lightgbm,0.11604098457299238,321241.3897733437,865485.835662168,307279.25064951455,135846,121983,31,lightgbm,2025

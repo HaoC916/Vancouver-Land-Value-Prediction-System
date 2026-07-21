@@ -14,9 +14,9 @@ Data: TransLink open GTFS (Metro Vancouver) + BC Transit's Fraser Valley operato
 (Abbotsford/Mission/Chilliwack local buses) for the walkable stop-density count. Rapid transit
 comes ONLY from TransLink (GTFS route_type {1 SkyTrain, 2 West Coast Express, 4 SeaBus}) — the
 Fraser Valley has none of its own, though Mission's WCE station is in the TransLink feed. We
-score subareas whose centre falls inside the combined stop bounding box (Greater Vancouver +
-Fraser Valley); subareas without a boundary centre (e.g. Chilliwack, a known gap) read back as
-null rather than a misleading zero. Bus (route_type 3) and HandyDART are excluded from the
+score every in-scope subarea that has a centre. A community with no nearby stops receives a
+real zero-density score instead of being treated as missing data. Bus (route_type 3) and
+HandyDART are excluded from the
 rapid-transit distance but their stops still count toward stops_800m.
 
 Join key: region_id == community_boundary.subarea_id (same as build_school_deploy).
@@ -29,13 +29,15 @@ from __future__ import annotations
 import argparse
 import csv
 import math
-import struct
 import urllib.request
 import zipfile
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from src.data._community import (COMMUNITY_BOUNDARY_PATH, COMMUNITY_LOOKUP_PATH,
+                                 decode_point, load_boundary)
 
 csv.field_size_limit(1 << 28)
 
@@ -48,17 +50,6 @@ BCT_FRASER_VALLEY_URL = "https://bct.tmix.se/Tmix.Cap.TdExport.WebApi/gtfs/?oper
 USER_AGENT = "vancouver-livability/1.0 (neighbourhood transit aggregation; TransLink + BC Transit GTFS)"
 RAPID_ROUTE_TYPES = {"1", "2", "4"}  # SkyTrain, West Coast Express, SeaBus
 STOP_RADIUS_KM = 0.8
-BBOX_BUFFER_DEG = 0.02  # only score subareas within the TransLink stop footprint (+ padding)
-
-
-def _decode_point(hexstr: str) -> tuple[float, float]:
-    b = bytes.fromhex(hexstr)
-    e = "<" if b[0] == 1 else ">"
-    t = struct.unpack(e + "I", b[1:5])[0]
-    o = 9 if t & 0x20000000 else 5
-    lon = struct.unpack(e + "d", b[o:o + 8])[0]
-    lat = struct.unpack(e + "d", b[o + 8:o + 16])[0]
-    return lon, lat
 
 
 def _dists_km(lat: float, lon: float, pts: np.ndarray) -> np.ndarray:
@@ -135,7 +126,8 @@ def _load_gtfs(cache_zip: Path) -> tuple[np.ndarray, np.ndarray]:
     return all_pts, rapid_pts
 
 
-def build(boundary_path: Path, out_path: Path, cache_zip: Path, bct_cache_zip: Path) -> pd.DataFrame:
+def build(boundary_path: Path, out_path: Path, cache_zip: Path, bct_cache_zip: Path,
+          lookup_path: Path = COMMUNITY_LOOKUP_PATH) -> pd.DataFrame:
     all_pts, rapid_pts = _load_gtfs(_ensure_gtfs(cache_zip, GTFS_URL, "TransLink"))
     # Add Fraser Valley bus stops (BC Transit) to the walkable stop-density set, so Abbotsford /
     # Mission subareas get scored too. Rapid-transit stops stay TransLink-only.
@@ -146,29 +138,22 @@ def build(boundary_path: Path, out_path: Path, cache_zip: Path, bct_cache_zip: P
     except Exception as exc:  # noqa: BLE001 - FV is optional; TransLink-only still valid
         print(f"[transit] WARNING: BC Transit FV feed unavailable ({exc}); Metro Van only")
 
-    # Service footprint: only score subareas whose centre sits inside the combined stop bbox.
-    s, w = all_pts[:, 0].min() - BBOX_BUFFER_DEG, all_pts[:, 1].min() - BBOX_BUFFER_DEG
-    n, e = all_pts[:, 0].max() + BBOX_BUFFER_DEG, all_pts[:, 1].max() + BBOX_BUFFER_DEG
-
     rows = []
-    with open(boundary_path, newline="") as f:
-        for r in csv.DictReader(f):
-            try:
-                lon, lat = _decode_point(r["center_geom"])
-            except (ValueError, KeyError):
-                continue
-            if not (s <= lat <= n and w <= lon <= e):
-                continue  # outside the transit-data footprint — leave null on merge
-            sd = _dists_km(lat, lon, all_pts)
-            rd = _dists_km(lat, lon, rapid_pts)
-            stops_800m = int((sd < STOP_RADIUS_KM).sum())
-            rapid_dist = float(rd.min()) if len(rd) else math.inf
-            rows.append({
-                "region_id": r["subarea_id"],
-                "transit_stops_800m": stops_800m,
-                "rapid_transit_dist_km": round(rapid_dist, 1) if math.isfinite(rapid_dist) else None,
-                "transit_score": _transit_score(stops_800m, rapid_dist),
-            })
+    for r in load_boundary(boundary_path, lookup_path).to_dict("records"):
+        try:
+            lon, lat = decode_point(r["center_geom"])
+        except (ValueError, KeyError, TypeError):
+            continue
+        sd = _dists_km(lat, lon, all_pts)
+        rd = _dists_km(lat, lon, rapid_pts)
+        stops_800m = int((sd < STOP_RADIUS_KM).sum())
+        rapid_dist = float(rd.min()) if len(rd) else math.inf
+        rows.append({
+            "region_id": str(r["subarea_id"]),
+            "transit_stops_800m": stops_800m,
+            "rapid_transit_dist_km": round(rapid_dist, 1) if math.isfinite(rapid_dist) else None,
+            "transit_score": _transit_score(stops_800m, rapid_dist),
+        })
 
     out = pd.DataFrame(rows)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -182,12 +167,14 @@ def build(boundary_path: Path, out_path: Path, cache_zip: Path, bct_cache_zip: P
 def main() -> None:
     p = argparse.ArgumentParser(
         description="Build the per-neighbourhood transit lookup (TransLink + BC Transit GTFS).")
-    p.add_argument("--boundary_path", default="data/processed/community_boundary.csv")
+    p.add_argument("--boundary_path", default=str(COMMUNITY_BOUNDARY_PATH))
+    p.add_argument("--lookup_path", default=str(COMMUNITY_LOOKUP_PATH))
     p.add_argument("--out_path", default="data/deploy/subarea_transit.parquet")
     p.add_argument("--cache_zip", default="data/raw/gtfs/translink_google_transit.zip")
     p.add_argument("--bct_cache_zip", default="data/raw/gtfs/bctransit_fraser_valley.zip")
     a = p.parse_args()
-    build(Path(a.boundary_path), Path(a.out_path), Path(a.cache_zip), Path(a.bct_cache_zip))
+    build(Path(a.boundary_path), Path(a.out_path), Path(a.cache_zip), Path(a.bct_cache_zip),
+          Path(a.lookup_path))
 
 
 if __name__ == "__main__":

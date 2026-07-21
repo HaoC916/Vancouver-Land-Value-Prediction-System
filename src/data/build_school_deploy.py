@@ -19,11 +19,13 @@ import argparse
 import csv
 import math
 import re
-import struct
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from src.data._community import (COMMUNITY_BOUNDARY_PATH, COMMUNITY_LOOKUP_PATH,
+                                 SCHOOL_PATH, SCHOOL_RANK_PATH, decode_point, load_boundary)
 
 csv.field_size_limit(1 << 28)
 RADIUS_KM = 2.5
@@ -34,17 +36,8 @@ def _year(s: str) -> int:
     return int(m.group(1)) if m else 0
 
 
-def _decode_point(hexstr: str) -> tuple[float, float]:
-    b = bytes.fromhex(hexstr)
-    e = "<" if b[0] == 1 else ">"
-    t = struct.unpack(e + "I", b[1:5])[0]
-    o = 9 if t & 0x20000000 else 5
-    lon = struct.unpack(e + "d", b[o:o + 8])[0]
-    lat = struct.unpack(e + "d", b[o + 8:o + 16])[0]
-    return lon, lat
-
-
-def build(rank_path: Path, school_path: Path, boundary_path: Path, out_path: Path) -> pd.DataFrame:
+def build(rank_path: Path, school_path: Path, boundary_path: Path, out_path: Path,
+          lookup_path: Path = COMMUNITY_LOOKUP_PATH) -> pd.DataFrame:
     # Best recent Fraser 0-10 score per numeric school id.
     best: dict[str, tuple[int, float]] = {}
     with open(rank_path, newline="") as f:
@@ -73,20 +66,19 @@ def build(rank_path: Path, school_path: Path, boundary_path: Path, out_path: Pat
     print(f"[school] schools with score+coords: {len(S):,}")
 
     rows = []
-    with open(boundary_path, newline="") as f:
-        for r in csv.DictReader(f):
-            lon, lat = _decode_point(r["center_geom"])
-            dlat = (S[:, 0] - lat) * 111.0
-            dlon = (S[:, 1] - lon) * 111.0 * math.cos(math.radians(lat))
-            d = np.sqrt(dlat ** 2 + dlon ** 2)
-            near = S[d < RADIUS_KM]
-            if len(near):
-                rows.append({
-                    "region_id": r["subarea_id"],
-                    "best_school_score": round(float(near[:, 2].max()), 1),
-                    "avg_school_score": round(float(near[:, 2].mean()), 1),
-                    "school_count": int(len(near)),
-                })
+    for r in load_boundary(boundary_path, lookup_path).to_dict("records"):
+        lon, lat = decode_point(r["center_geom"])
+        dlat = (S[:, 0] - lat) * 111.0
+        dlon = (S[:, 1] - lon) * 111.0 * math.cos(math.radians(lat))
+        d = np.sqrt(dlat ** 2 + dlon ** 2)
+        near = S[d < RADIUS_KM]
+        if len(near):
+            rows.append({
+                "region_id": str(r["subarea_id"]),
+                "best_school_score": round(float(near[:, 2].max()), 1),
+                "avg_school_score": round(float(near[:, 2].mean()), 1),
+                "school_count": int(len(near)),
+            })
     out = pd.DataFrame(rows)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out.to_parquet(out_path, index=False)
@@ -96,12 +88,14 @@ def build(rank_path: Path, school_path: Path, boundary_path: Path, out_path: Pat
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Build the per-neighbourhood school-quality lookup.")
-    p.add_argument("--rank_path", default="data/processed/updated/school_rank.csv")
-    p.add_argument("--school_path", default="data/processed/updated/school.csv")
-    p.add_argument("--boundary_path", default="data/processed/community_boundary.csv")
+    p.add_argument("--rank_path", default=str(SCHOOL_RANK_PATH))
+    p.add_argument("--school_path", default=str(SCHOOL_PATH))
+    p.add_argument("--boundary_path", default=str(COMMUNITY_BOUNDARY_PATH))
+    p.add_argument("--lookup_path", default=str(COMMUNITY_LOOKUP_PATH))
     p.add_argument("--out_path", default="data/deploy/subarea_school.parquet")
     a = p.parse_args()
-    build(Path(a.rank_path), Path(a.school_path), Path(a.boundary_path), Path(a.out_path))
+    build(Path(a.rank_path), Path(a.school_path), Path(a.boundary_path), Path(a.out_path),
+          Path(a.lookup_path))
 
 
 if __name__ == "__main__":

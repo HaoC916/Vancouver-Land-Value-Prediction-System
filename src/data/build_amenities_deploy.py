@@ -29,7 +29,6 @@ import argparse
 import csv
 import json
 import math
-import struct
 import time
 import urllib.parse
 import urllib.request
@@ -37,6 +36,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from src.data._community import (COMMUNITY_BOUNDARY_PATH, COMMUNITY_LOOKUP_PATH,
+                                 decode_point, load_boundary)
 
 csv.field_size_limit(1 << 28)
 
@@ -58,25 +60,15 @@ REGION_LON_GAP = 2.0   # split centres into regions where longitude jumps by mor
 BBOX_BUFFER_DEG = 0.03  # ~3 km padding so edge subareas still see POIs just outside the box
 
 
-def _decode_point(hexstr: str) -> tuple[float, float]:
-    b = bytes.fromhex(hexstr)
-    e = "<" if b[0] == 1 else ">"
-    t = struct.unpack(e + "I", b[1:5])[0]
-    o = 9 if t & 0x20000000 else 5
-    lon = struct.unpack(e + "d", b[o:o + 8])[0]
-    lat = struct.unpack(e + "d", b[o + 8:o + 16])[0]
-    return lon, lat
-
-
-def _load_centres(boundary_path: Path) -> list[tuple[str, float, float]]:
+def _load_centres(boundary_path: Path,
+                  lookup_path: Path = COMMUNITY_LOOKUP_PATH) -> list[tuple[str, float, float]]:
     out = []
-    with open(boundary_path, newline="") as f:
-        for r in csv.DictReader(f):
-            try:
-                lon, lat = _decode_point(r["center_geom"])
-            except (ValueError, KeyError):
-                continue
-            out.append((r["subarea_id"], lat, lon))
+    for r in load_boundary(boundary_path, lookup_path).to_dict("records"):
+        try:
+            lon, lat = decode_point(r["center_geom"])
+        except (ValueError, KeyError, TypeError):
+            continue
+        out.append((str(r["subarea_id"]), lat, lon))
     return out
 
 
@@ -124,7 +116,10 @@ def _overpass(query: str, timeout: int = 180) -> dict:
 def _fetch_pois(region_idx: int, bbox: tuple[float, float, float, float], category: str,
                 filters: list[str], cache_dir: Path) -> np.ndarray:
     """Return an (N, 2) array of (lat, lon) for one category in one region, cached to disk."""
-    cache = cache_dir / f"osm_r{region_idx}_{category}.json"
+    # Include the rounded bbox in the cache key.  The previous r0/r1 names silently reused
+    # Metro-Vancouver-only POIs after the boundary expanded east into Fraser Valley.
+    bbox_key = "_".join(f"{v:.3f}".replace("-", "m").replace(".", "p") for v in bbox)
+    cache = cache_dir / f"osm_{bbox_key}_{category}.json"
     if cache.exists():
         elements = json.loads(cache.read_text())["elements"]
     else:
@@ -176,8 +171,9 @@ def _amenity_score(grocery: int, food: int, park_cnt: int, park_dist: float,
     return round(100.0 * score, 1)
 
 
-def build(boundary_path: Path, out_path: Path, cache_dir: Path) -> pd.DataFrame:
-    centres = _load_centres(boundary_path)
+def build(boundary_path: Path, out_path: Path, cache_dir: Path,
+          lookup_path: Path = COMMUNITY_LOOKUP_PATH) -> pd.DataFrame:
+    centres = _load_centres(boundary_path, lookup_path)
     regions = _cluster_regions(centres)
     print(f"[amenities] {len(centres)} centres in {len(regions)} region(s): "
           + ", ".join(f"{r['n']}@{r['bbox'][0]:.1f},{r['bbox'][1]:.1f}" for r in regions))
@@ -239,11 +235,12 @@ def build(boundary_path: Path, out_path: Path, cache_dir: Path) -> pd.DataFrame:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Build the per-neighbourhood amenities lookup (OSM).")
-    p.add_argument("--boundary_path", default="data/processed/community_boundary.csv")
+    p.add_argument("--boundary_path", default=str(COMMUNITY_BOUNDARY_PATH))
+    p.add_argument("--lookup_path", default=str(COMMUNITY_LOOKUP_PATH))
     p.add_argument("--out_path", default="data/deploy/subarea_amenities.parquet")
     p.add_argument("--cache_dir", default="data/raw/osm")
     a = p.parse_args()
-    build(Path(a.boundary_path), Path(a.out_path), Path(a.cache_dir))
+    build(Path(a.boundary_path), Path(a.out_path), Path(a.cache_dir), Path(a.lookup_path))
 
 
 if __name__ == "__main__":

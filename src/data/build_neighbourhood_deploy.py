@@ -1,6 +1,6 @@
 """Distill a small per-neighbourhood profile deploy lookup for the agent.
 
-From the per-subarea monthly market data (community_market_trend_enriched.csv), compute
+From the refreshed per-subarea monthly market data, compute
 one row per (neighbourhood, property type) with a recent typical price and market-heat
 (days on market, sold volume). Powers the agent's recommend_neighbourhoods tool — so when
 a user is unsure which neighbourhood, it can suggest real ones that fit a budget.
@@ -17,17 +17,17 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data._scope import GREATER_VANCOUVER_AREAS
+from src.data._community import COMMUNITY_LOOKUP_PATH, COMMUNITY_TREND_PATH, load_subarea_trend
 
 # Detached / condo(apartment) / townhouse.
 TYPES = {"HOUSE", "APTU", "TWIN"}
 
 
-def build(in_path: Path, out_path: Path, months: int) -> pd.DataFrame:
-    df = pd.read_csv(in_path)
+def build(in_path: Path, out_path: Path, months: int,
+          lookup_path: Path = COMMUNITY_LOOKUP_PATH) -> pd.DataFrame:
+    df = load_subarea_trend(in_path, lookup_path)
     df = df[df["property_type"].isin(TYPES)].copy()
     df = df[df["subarea_name"].notna() & df["area_name"].notna()].copy()
-    df = df[df["area_name"].isin(GREATER_VANCOUVER_AREAS)].copy()  # Greater Van + Fraser Valley only
     df["period_start"] = pd.to_datetime(df["period_start"], errors="coerce")
     for c in ["median_sold_price", "median_list_price", "median_dom", "sold_count"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
@@ -62,11 +62,12 @@ def build(in_path: Path, out_path: Path, months: int) -> pd.DataFrame:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Build the per-neighbourhood profile deploy lookup.")
-    p.add_argument("--in_path", default="data/processed/community_market_trend_enriched.csv")
+    p.add_argument("--in_path", default=str(COMMUNITY_TREND_PATH))
+    p.add_argument("--lookup_path", default=str(COMMUNITY_LOOKUP_PATH))
     p.add_argument("--out_path", default="data/deploy/neighbourhood_profile.parquet")
     p.add_argument("--months", type=int, default=12)
     a = p.parse_args()
-    build(Path(a.in_path), Path(a.out_path), a.months)
+    build(Path(a.in_path), Path(a.out_path), a.months, Path(a.lookup_path))
 
 
 if __name__ == "__main__":

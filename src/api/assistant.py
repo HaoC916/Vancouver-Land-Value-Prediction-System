@@ -120,7 +120,7 @@ Chen. You have several abilities, all backed by real data:
    2021 snapshot; say so when asked about "now".
 
 3. Market trends — monthly community-level resale market data (new listings,
-   sales, average sold prices, days on market) from May 2021 to May 2026 for
+   sales, average sold prices, days on market) from May 2021 to June 2026 for
    33 real-estate-board areas across the Greater Vancouver area. Use
    get_market_trend. Area names follow board conventions: "Vancouver West"/
    "Vancouver East", "Burnaby North/South/East", "North Surrey", "Abbotsford" —
