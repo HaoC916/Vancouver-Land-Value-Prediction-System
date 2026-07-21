@@ -12,6 +12,14 @@ market_missing = pytest.mark.skipif(
 )
 
 
+def _has_interior_rings(geometry):
+    if geometry["type"] == "Polygon":
+        return len(geometry["coordinates"]) > 1
+    if geometry["type"] == "MultiPolygon":
+        return any(len(polygon) > 1 for polygon in geometry["coordinates"])
+    raise AssertionError(f"Unexpected map geometry: {geometry['type']}")
+
+
 def test_health():
     r = client.get("/health")
     assert r.status_code == 200
@@ -94,6 +102,11 @@ def test_municipality_map_uses_modified_geometry_unions():
         feature["properties"]["geometry_source"] == "modified_geom_union"
         for feature in body["features"]
     )
+    assert not any(_has_interior_rings(feature["geometry"]) for feature in body["features"])
+    assert "Surrey" in {feature["properties"]["name"] for feature in body["features"]}
+    assert "Surrey and Whiterock" not in {
+        feature["properties"]["name"] for feature in body["features"]
+    }
 
 
 def test_community_map_never_falls_back_to_raw_geometry():
@@ -107,6 +120,7 @@ def test_community_map_never_falls_back_to_raw_geometry():
         feature["properties"]["geometry_source"] == "modified_geom"
         for feature in body["features"]
     )
+    assert not any(_has_interior_rings(feature["geometry"]) for feature in body["features"])
 
 
 def test_community_map_can_filter_by_municipality():

@@ -235,10 +235,7 @@ export default function MapMode({ onAsk }: MapModeProps) {
       <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Explore the region</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">City & community map</h1>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">
-            Compare market and livability patterns across refined MLS community boundaries.
-          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">City & Community Map</h1>
         </div>
         <div className="flex flex-wrap gap-3">
           <label className="text-xs font-medium text-slate-500">

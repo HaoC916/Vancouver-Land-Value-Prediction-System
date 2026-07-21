@@ -12,7 +12,7 @@ from typing import Any
 
 import pandas as pd
 from shapely import make_valid, wkt
-from shapely.geometry import mapping
+from shapely.geometry import MultiPolygon, Polygon, mapping
 from shapely.ops import unary_union
 
 from src.data._community import (COMMUNITY_BOUNDARY_PATH, COMMUNITY_LOOKUP_PATH,
@@ -23,6 +23,31 @@ COMMUNITY_OUTPUT = Path("data/deploy/community_map.geojson")
 MUNICIPALITY_OUTPUT = Path("data/deploy/municipality_map.geojson")
 MUNICIPALITY_PROFILE_PATH = Path("data/deploy/municipality_profile.parquet")
 SIMPLIFY_TOLERANCE = 0.00006  # roughly 5-7 metres at Greater Vancouver latitudes
+
+
+def _display_municipality_name(name: object) -> str:
+    """Use the concise product label while preserving the source municipality ID."""
+    value = str(name)
+    return "Surrey" if value == "Surrey and Whiterock" else value
+
+
+def _remove_interior_rings(geom):
+    """Fill display-only polygon holes without introducing any raw geometry.
+
+    The modified boundaries contain hundreds of very narrow interior rings. Leaflet strokes every
+    ring, which makes them look like stray internal lines. The exterior shells remain entirely from
+    ``modified_geom``; only their holes are removed for the visual map artifact.
+    """
+    if geom.geom_type == "Polygon":
+        return Polygon(geom.exterior)
+    if geom.geom_type == "MultiPolygon":
+        filled = [Polygon(part.exterior) for part in geom.geoms]
+        merged = unary_union(filled)
+        if merged.geom_type == "Polygon":
+            return merged
+        if merged.geom_type == "MultiPolygon":
+            return MultiPolygon(list(merged.geoms))
+    return geom
 
 
 def _id(series: pd.Series) -> pd.Series:
@@ -40,6 +65,7 @@ def _geometry(value: object):
         return None
     if not geom.is_valid:
         geom = make_valid(geom)
+    geom = _remove_interior_rings(geom)
     geom = geom.simplify(SIMPLIFY_TOLERANCE, preserve_topology=True)
     return geom if geom.geom_type in {"Polygon", "MultiPolygon"} else None
 
@@ -104,7 +130,9 @@ def build(
         name_row = names.loc[rid]
         area_id = str(name_row["area_id"])
         municipality_id = str(area_to_municipality.get(area_id, ""))
-        municipality = str(municipality_names.get(municipality_id, name_row["area_name"]))
+        municipality = _display_municipality_name(
+            municipality_names.get(municipality_id, name_row["area_name"])
+        )
         score = scores.loc[rid] if rid in scores.index else None
         props = {
             "region_id": rid,
@@ -131,6 +159,7 @@ def build(
     municipality_features = []
     for municipality_id, geoms in geometry_groups.items():
         city_geom = unary_union(geoms).simplify(SIMPLIFY_TOLERANCE, preserve_topology=True)
+        city_geom = _remove_interior_rings(city_geom)
         ids = city_community_ids[municipality_id]
         city_scores = scores.loc[scores.index.intersection(ids), "livability_score"]
         municipality_features.append({
@@ -138,7 +167,9 @@ def build(
             "id": municipality_id,
             "properties": {
                 "region_id": municipality_id,
-                "name": str(municipality_names.get(municipality_id, "Unknown")),
+                "name": _display_municipality_name(
+                    municipality_names.get(municipality_id, "Unknown")
+                ),
                 "geometry_source": "modified_geom_union",
                 "community_count": len(ids),
                 "market": market_by_municipality.get(municipality_id, {}),
@@ -149,12 +180,19 @@ def build(
 
     communities = {
         "type": "FeatureCollection",
-        "metadata": {"geometry_source": "modified_geom_only", "excluded_missing_modified": missing_modified},
+        "metadata": {
+            "geometry_source": "modified_geom_only",
+            "geometry_cleanup": "interior_rings_removed",
+            "excluded_missing_modified": missing_modified,
+        },
         "features": community_features,
     }
     municipalities = {
         "type": "FeatureCollection",
-        "metadata": {"geometry_source": "modified_geom_union_only"},
+        "metadata": {
+            "geometry_source": "modified_geom_union_only",
+            "geometry_cleanup": "interior_rings_removed",
+        },
         "features": sorted(municipality_features, key=lambda f: f["properties"]["name"]),
     }
     community_output.parent.mkdir(parents=True, exist_ok=True)

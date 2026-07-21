@@ -104,3 +104,8 @@ modified geometry (Kawkawa Lake, region 308) is intentionally omitted, never rep
 The 21 city shapes are unions of those same modified community polygons. Generated artifacts are
 `community_map.geojson` and `municipality_map.geojson`; the API serves them from
 `/map/communities` and `/map/municipalities`.
+
+Display-only interior rings are removed from both GeoJSON artifacts. These rings were exclusions and
+thin gaps inside the modified polygons, and Leaflet rendered all 889 city-level rings as distracting
+internal lines. Exterior shells still come exclusively from `modified_geom`. The product display label
+for source municipality `Surrey and Whiterock` is normalized to `Surrey` while retaining its source ID.
