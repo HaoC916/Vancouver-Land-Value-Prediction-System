@@ -24,6 +24,7 @@ type MapProperties = {
   municipality?: string;
   municipality_id?: string;
   community_count?: number;
+  display_community_count?: number;
   geometry_source: "modified_geom" | "modified_geom_union";
   market: Partial<Record<PropertyType, MarketRow>>;
   livability_score: number | null;
@@ -225,7 +226,12 @@ export default function MapMode({ onAsk }: MapModeProps) {
   const entityName = selected?.properties.name ?? "Select an area";
   const entityContext = level === "communities"
     ? selected?.properties.municipality ?? selected?.properties.area
-    : selected ? `${selected.properties.community_count ?? 0} mapped communities` : "Click a boundary to compare it";
+    : selected
+      ? selected.properties.display_community_count != null
+        && selected.properties.display_community_count !== selected.properties.community_count
+        ? `${selected.properties.display_community_count} urban communities shown · ${selected.properties.community_count ?? 0} market communities`
+        : `${selected.properties.community_count ?? 0} market communities`
+      : "Click a boundary to compare it";
   const askText = selected
     ? `Tell me about ${selected.properties.name}${level === "communities" && selected.properties.municipality ? ` in ${selected.properties.municipality}` : ""} for buying a ${PROPERTY_LABELS[propertyType].toLowerCase()}. Include price, market trend, livability, transit and schools.`
     : "Help me choose an area in Greater Vancouver based on budget, commute and livability.";

@@ -115,6 +115,9 @@ def test_municipality_map_uses_modified_geometry_unions():
     ]
     assert body["metadata"]["max_cleanup_area_change_ratio"] == 0.001
     assert body["metadata"]["city_display_max_latitudes"] == {"90": 49.381, "155": 49.381}
+    assert body["metadata"]["city_display_included_communities"] == {
+        "80": ["Hatzic", "Mission BC", "Mission-West"]
+    }
     assert len(body["features"]) == 21
     assert all(
         feature["properties"]["geometry_source"] == "modified_geom_union"
@@ -136,6 +139,14 @@ def test_municipality_map_uses_modified_geometry_unions():
         and _maximum_latitude(feature["geometry"]) <= 49.3810001
         for feature in north_shore.values()
     )
+    mission = next(
+        feature for feature in body["features"]
+        if feature["properties"]["name"] == "Mission"
+    )
+    assert mission["properties"]["display_scope"] == "urban_market_footprint"
+    assert mission["properties"]["community_count"] == 9
+    assert mission["properties"]["display_community_count"] == 3
+    assert _maximum_latitude(mission["geometry"]) < 49.216
 
 
 def test_community_map_never_falls_back_to_raw_geometry():

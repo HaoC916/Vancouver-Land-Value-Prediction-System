@@ -123,3 +123,10 @@ from the city overview while retaining all 34/33 market communities, metrics, an
 polygons. West Vancouver retains 26.827% and North Vancouver 83.381% of their former display-union area;
 the other 19 city shapes are exactly unchanged. The pre-trim and validated post-trim GeoJSON files are
 checksummed in the July 20 backup manifest.
+
+Mission uses the same urban-focused Cities-layer principle, but an explicit community allowlist is more
+accurate than a latitude cut: Mission BC, Mission-West, and Hatzic form the displayed city footprint.
+Lake Errock, Dewdney Deroche, Hemlock, Durieu, Stave Falls, and Steelhead remain intact in Community view
+and in all 9-community municipality market/livability metrics. The city card reports “3 urban communities
+shown · 9 market communities.” Mission's display area is 3.592% of its former rural-inclusive union and
+the other 20 city shapes are exactly unchanged.

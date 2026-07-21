@@ -29,6 +29,9 @@ MAX_DISPLAY_AREA_CHANGE_RATIO = 0.001  # never alter a city display area by more
 # intentionally an urban-market footprint, so trim only the display union; community geometry and
 # every market/livability calculation remain unchanged.
 CITY_DISPLAY_MAX_LATITUDES = {"90": 49.381, "155": 49.381}
+CITY_DISPLAY_INCLUDED_COMMUNITIES = {
+    "80": {"Mission BC", "Mission-West", "Hatzic"},
+}
 
 
 def _display_municipality_name(name: object) -> str:
@@ -150,6 +153,7 @@ def build(
 
     community_features = []
     geometry_groups: dict[str, list] = {}
+    named_geometry_groups: dict[str, list[tuple[str, Any]]] = {}
     city_community_ids: dict[str, list[str]] = {}
     for _, row in boundary.iterrows():
         rid = str(row["subarea_id"])
@@ -183,6 +187,9 @@ def build(
             "type": "Feature", "id": rid, "properties": props, "geometry": mapping(geom)
         })
         geometry_groups.setdefault(municipality_id, []).append(geom)
+        named_geometry_groups.setdefault(municipality_id, []).append(
+            (str(name_row["subarea_name"]), geom)
+        )
         city_community_ids.setdefault(municipality_id, []).append(rid)
 
     municipality_profile = pd.read_parquet(MUNICIPALITY_PROFILE_PATH)
@@ -190,7 +197,23 @@ def build(
     municipality_features = []
     cleanup_guard_skipped_ids = []
     for municipality_id, geoms in geometry_groups.items():
-        city_geom = unary_union(geoms).simplify(SIMPLIFY_TOLERANCE, preserve_topology=True)
+        included_names = CITY_DISPLAY_INCLUDED_COMMUNITIES.get(municipality_id)
+        display_geoms = geoms
+        if included_names is not None:
+            available_names = {name for name, _ in named_geometry_groups[municipality_id]}
+            missing_names = included_names - available_names
+            if missing_names:
+                raise ValueError(
+                    f"Missing configured display communities for {municipality_id}: "
+                    f"{sorted(missing_names)}"
+                )
+            display_geoms = [
+                geom for name, geom in named_geometry_groups[municipality_id]
+                if name in included_names
+            ]
+        city_geom = unary_union(display_geoms).simplify(
+            SIMPLIFY_TOLERANCE, preserve_topology=True
+        )
         city_geom = _trim_city_display(city_geom, municipality_id)
         city_geom, cleanup_applied = _close_narrow_slits(_remove_interior_rings(city_geom))
         if not cleanup_applied:
@@ -209,9 +232,11 @@ def build(
                 "display_scope": (
                     "urban_market_footprint"
                     if municipality_id in CITY_DISPLAY_MAX_LATITUDES
+                    or municipality_id in CITY_DISPLAY_INCLUDED_COMMUNITIES
                     else "full_modified_union"
                 ),
                 "community_count": len(ids),
+                "display_community_count": len(display_geoms),
                 "market": market_by_municipality.get(municipality_id, {}),
                 "livability_score": _optional(city_scores.mean()) if city_scores.notna().any() else None,
             },
@@ -236,6 +261,10 @@ def build(
             "max_cleanup_area_change_ratio": MAX_DISPLAY_AREA_CHANGE_RATIO,
             "cleanup_guard_skipped_ids": sorted(cleanup_guard_skipped_ids),
             "city_display_max_latitudes": CITY_DISPLAY_MAX_LATITUDES,
+            "city_display_included_communities": {
+                municipality_id: sorted(names)
+                for municipality_id, names in CITY_DISPLAY_INCLUDED_COMMUNITIES.items()
+            },
         },
         "features": sorted(municipality_features, key=lambda f: f["properties"]["name"]),
     }
