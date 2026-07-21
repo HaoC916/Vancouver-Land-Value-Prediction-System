@@ -97,6 +97,10 @@ def test_municipality_map_uses_modified_geometry_unions():
     assert r.status_code == 200
     body = r.json()
     assert body["metadata"]["geometry_source"] == "modified_geom_union_only"
+    assert body["metadata"]["geometry_cleanup"] == [
+        "interior_rings_removed", "narrow_slits_closed"
+    ]
+    assert body["metadata"]["max_cleanup_area_change_ratio"] == 0.001
     assert len(body["features"]) == 21
     assert all(
         feature["properties"]["geometry_source"] == "modified_geom_union"
@@ -114,6 +118,7 @@ def test_community_map_never_falls_back_to_raw_geometry():
     assert r.status_code == 200
     body = r.json()
     assert body["metadata"]["geometry_source"] == "modified_geom_only"
+    assert body["metadata"]["geometry_cleanup"] == ["interior_rings_removed"]
     assert body["metadata"]["excluded_missing_modified"] == ["308"]
     assert len(body["features"]) == 357
     assert all(

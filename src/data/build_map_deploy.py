@@ -23,6 +23,8 @@ COMMUNITY_OUTPUT = Path("data/deploy/community_map.geojson")
 MUNICIPALITY_OUTPUT = Path("data/deploy/municipality_map.geojson")
 MUNICIPALITY_PROFILE_PATH = Path("data/deploy/municipality_profile.parquet")
 SIMPLIFY_TOLERANCE = 0.00006  # roughly 5-7 metres at Greater Vancouver latitudes
+DISPLAY_CLOSE_TOLERANCE = 0.00015  # closes roughly 10-17 metre-wide display slits
+MAX_DISPLAY_AREA_CHANGE_RATIO = 0.001  # never alter a city display area by more than 0.1%
 
 
 def _display_municipality_name(name: object) -> str:
@@ -48,6 +50,20 @@ def _remove_interior_rings(geom):
         if merged.geom_type == "MultiPolygon":
             return MultiPolygon(list(merged.geoms))
     return geom
+
+
+def _close_narrow_slits(geom):
+    """Close hairline exterior notches that Leaflet otherwise strokes as boundary spikes."""
+    closed = geom.buffer(DISPLAY_CLOSE_TOLERANCE, join_style=2).buffer(
+        -DISPLAY_CLOSE_TOLERANCE, join_style=2
+    )
+    if closed.is_empty or closed.geom_type not in {"Polygon", "MultiPolygon"}:
+        return geom, False
+    closed = _remove_interior_rings(closed)
+    area_change = abs(closed.area - geom.area) / geom.area if geom.area else 0.0
+    if area_change > MAX_DISPLAY_AREA_CHANGE_RATIO:
+        return geom, False
+    return closed, True
 
 
 def _id(series: pd.Series) -> pd.Series:
@@ -157,9 +173,12 @@ def build(
     municipality_profile = pd.read_parquet(MUNICIPALITY_PROFILE_PATH)
     market_by_municipality = _market_by_id(municipality_profile, "region_id")
     municipality_features = []
+    cleanup_guard_skipped_ids = []
     for municipality_id, geoms in geometry_groups.items():
         city_geom = unary_union(geoms).simplify(SIMPLIFY_TOLERANCE, preserve_topology=True)
-        city_geom = _remove_interior_rings(city_geom)
+        city_geom, cleanup_applied = _close_narrow_slits(_remove_interior_rings(city_geom))
+        if not cleanup_applied:
+            cleanup_guard_skipped_ids.append(municipality_id)
         ids = city_community_ids[municipality_id]
         city_scores = scores.loc[scores.index.intersection(ids), "livability_score"]
         municipality_features.append({
@@ -182,7 +201,7 @@ def build(
         "type": "FeatureCollection",
         "metadata": {
             "geometry_source": "modified_geom_only",
-            "geometry_cleanup": "interior_rings_removed",
+            "geometry_cleanup": ["interior_rings_removed"],
             "excluded_missing_modified": missing_modified,
         },
         "features": community_features,
@@ -191,7 +210,10 @@ def build(
         "type": "FeatureCollection",
         "metadata": {
             "geometry_source": "modified_geom_union_only",
-            "geometry_cleanup": "interior_rings_removed",
+            "geometry_cleanup": ["interior_rings_removed", "narrow_slits_closed"],
+            "cleanup_tolerance_degrees": DISPLAY_CLOSE_TOLERANCE,
+            "max_cleanup_area_change_ratio": MAX_DISPLAY_AREA_CHANGE_RATIO,
+            "cleanup_guard_skipped_ids": sorted(cleanup_guard_skipped_ids),
         },
         "features": sorted(municipality_features, key=lambda f: f["properties"]["name"]),
     }

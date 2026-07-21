@@ -109,3 +109,10 @@ Display-only interior rings are removed from both GeoJSON artifacts. These rings
 thin gaps inside the modified polygons, and Leaflet rendered all 889 city-level rings as distracting
 internal lines. Exterior shells still come exclusively from `modified_geom`. The product display label
 for source municipality `Surrey and Whiterock` is normalized to `Surrey` while retaining its source ID.
+
+City display boundaries also receive a 0.00015-degree morphological closing to remove the narrow
+exterior slits that Leaflet rendered as dangling spikes. A 0.1% per-city area-change guard preserves the
+pre-cleaned shape when closing would be too invasive (currently Chilliwack). Validation keeps 21 city and
+357 community IDs/properties unchanged, all geometries valid, zero interior rings, unchanged total bounds,
+and a maximum city-area change of 0.0348%. Pre-spike backups, checksums, and reviewed cleaned copies are in
+`data/processed/updated/july 20/` and remain ignored/private with the canonical inputs.
