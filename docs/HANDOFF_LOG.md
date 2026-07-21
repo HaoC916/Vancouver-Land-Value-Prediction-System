@@ -78,3 +78,11 @@ Implemented as a separate change from the Subarea refresh:
   Appreciation is explicitly historical, not a forecast.
 
 The next product branches remain investment rental-yield data and vacation/resort coverage.
+
+### Verified deployment
+
+- GitHub branch `market-price-v2`: `f8deace`.
+- Hugging Face backend Space: `1cc6bc5`, RUNNING.
+- Live checks: Chilliwack neighbourhood livability, Burnaby June-2026 Subarea/board trend,
+  Burnaby whole-municipality condo trend, and municipality recommendations under a $500k condo
+  budget all returned the refreshed values.
