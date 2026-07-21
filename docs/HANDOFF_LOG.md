@@ -44,7 +44,7 @@ silently reusing the old Metro-Vancouver-only cache.
 
 ### Validation
 
-- 12 tests pass.
+- 17 tests pass (including strict modified-only map API coverage).
 - Chilliwack: 11/11 profile communities have amenities, transit, safety, and livability.
 - Sardis: 9/9; Mission: 9/9; Abbotsford: 9/9.
 - Fraser Valley boundary-backed profiles now receive spatial scores; communities with no nearby
@@ -81,8 +81,26 @@ The next product branches remain investment rental-yield data and vacation/resor
 
 ### Verified deployment
 
-- GitHub branch `market-price-v2`: `f8deace`.
-- Hugging Face backend Space: `1cc6bc5`, RUNNING.
+- GitHub branch `market-price-v2`: `4ddd358`.
+- Hugging Face backend Space: `3ffa394`.
+- Hugging Face frontend Space: `3db8183`.
 - Live checks: Chilliwack neighbourhood livability, Burnaby June-2026 Subarea/board trend,
   Burnaby whole-municipality condo trend, and municipality recommendations under a $500k condo
   budget all returned the refreshed values.
+
+## 2026-07-20 — Interactive Map
+
+The frontend now has a third top-level `Map` entry beside Chat and Search. It provides:
+
+- Cities and Communities views with city-to-community drill-down.
+- Condo / house / townhouse market snapshots.
+- Choropleths for typical price and livability; the Cities view also exposes observed year-over-year
+  price change.
+- A selected-area detail panel and `Ask in Chat`, which opens Chat with an editable contextual prompt.
+
+Map geometry has a stricter rule than the general spatial-data pipeline: **only `modified_geom` is
+rendered**. `build_map_deploy.py` produces 357 community features; the one in-scope boundary without
+modified geometry (Kawkawa Lake, region 308) is intentionally omitted, never replaced by raw geometry.
+The 21 city shapes are unions of those same modified community polygons. Generated artifacts are
+`community_map.geojson` and `municipality_map.geojson`; the API serves them from
+`/map/communities` and `/map/municipalities`.
