@@ -122,6 +122,8 @@ def load_subarea_trend(
 def load_municipality_trend(
     trend_path: Path = COMMUNITY_TREND_PATH,
     region_path: Path = REGION_PATH,
+    *,
+    scoped: bool = True,
 ) -> pd.DataFrame:
     """Load Municipality rows and attach English/Chinese names from ``region.csv``."""
     trend = pd.read_csv(trend_path, na_values=["NULL"], low_memory=False)
@@ -136,4 +138,26 @@ def load_municipality_trend(
     out = trend.merge(names, on="region_id", how="left", validate="many_to_one")
     if out["municipality_name"].isna().any():
         raise ValueError("Municipality trend contains IDs missing from region.csv")
+    if scoped:
+        allowed = set(scoped_municipalities(region_path)["region_id"])
+        out = out[out["region_id"].isin(allowed)].copy()
     return out
+
+
+def scoped_municipalities(region_path: Path = REGION_PATH) -> pd.DataFrame:
+    """Municipalities that own at least one board Area in the product scope."""
+    region = pd.read_csv(region_path, low_memory=False)
+    region["id"] = _normalise_id(region["id"])
+    region["parent_id"] = _normalise_id(region["parent_id"])
+    area_parent_ids = set(region.loc[
+        region["region_type"].eq("Area") & region["name"].isin(GREATER_VANCOUVER_AREAS),
+        "parent_id",
+    ].dropna())
+    municipalities = region[
+        region["region_type"].eq("Municipality")
+        & region["id"].isin(area_parent_ids)
+        & ~region["name"].eq("Other")
+    ].copy()
+    return municipalities[["id", "name", "name_cn", "province", "board", "latitude", "longitude"]].rename(
+        columns={"id": "region_id", "name": "municipality_name"}
+    )

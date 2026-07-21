@@ -35,6 +35,7 @@ GLOBAL_DAILY_LIMIT = 300
 
 CENSUS_PATH = Path("data/deploy/census_csd.json")
 MARKET_PATH = Path("data/deploy/market_trend.parquet")
+MUNICIPALITY_MARKET_PATH = Path("data/deploy/municipality_trend.parquet")
 
 # Source codes -> what users actually say.
 PTYPE_ALIASES = {
@@ -95,12 +96,13 @@ Chen. You have several abilities, all backed by real data:
          amenities, transit, safety and schools).
      Then ask PROPERTY TYPE and BUDGET and call recommend_neighbourhoods with that
      sort_by + max_price. If they named a city, pass it; if they're open to
-     anywhere, OMIT city to rank the whole region. Show the top few (the score that
+     anywhere, use recommend_municipalities for a city-level shortlist or OMIT city
+     in recommend_neighbourhoods to rank the whole region. Show the top few (the score that
      matters + price), let them pick one, then offer estimate_market_price for it.
 
-   • AN INVESTMENT — be upfront about depth for now: you can show how a market is
-     trending (get_market_trend: price direction, plus days-on-market and sales
-     volume = liquidity) and typical prices by area, but you do NOT yet compute
+   • AN INVESTMENT — be upfront about depth for now: you can compare municipalities
+     (recommend_municipalities by observed appreciation, liquidity, or price) and show
+     city trends (get_municipality_trend), but you do NOT yet compute
      rental yield / cash-flow. Help with appreciation, liquidity and price; say the
      rental-return side is coming.
 
@@ -119,10 +121,10 @@ Chen. You have several abilities, all backed by real data:
    (North Vancouver, Langley) match two municipalities — present both. This is a
    2021 snapshot; say so when asked about "now".
 
-3. Market trends — monthly community-level resale market data (new listings,
-   sales, average sold prices, days on market) from May 2021 to June 2026 for
-   33 real-estate-board areas across the Greater Vancouver area. Use
-   get_market_trend. Area names follow board conventions: "Vancouver West"/
+3. Market trends — monthly resale market data (new listings, sales, average sold
+   prices, days on market) from May 2021 to June 2026. Use get_municipality_trend
+   for one of 21 city-level aggregates and get_market_trend for 33 board areas or
+   named communities. Board area names follow conventions: "Vancouver West"/
    "Vancouver East", "Burnaby North/South/East", "North Surrey", "Abbotsford" —
    a partial name like "Burnaby" matches all its parts. These are aggregate
    monthly figures, not individual listings.
@@ -163,6 +165,7 @@ def get_census_rows() -> list[dict[str, Any]]:
 
 
 _market_df = None
+_municipality_market_df = None
 
 
 def get_market_df():
@@ -172,6 +175,18 @@ def get_market_df():
 
         _market_df = pd.read_parquet(MARKET_PATH) if MARKET_PATH.exists() else pd.DataFrame()
     return _market_df
+
+
+def get_municipality_market_df():
+    global _municipality_market_df
+    if _municipality_market_df is None:
+        import pandas as pd
+
+        _municipality_market_df = (
+            pd.read_parquet(MUNICIPALITY_MARKET_PATH)
+            if MUNICIPALITY_MARKET_PATH.exists() else pd.DataFrame()
+        )
+    return _municipality_market_df
 
 
 # ------------------------------------------------------------
@@ -337,7 +352,7 @@ TOOLS = [
             "sold price per month, plus a year-over-year price change. Partial names "
             "match ('Burnaby' covers Burnaby North/South/East). property_type: HOUSE "
             "(detached, default), APTU (condo/apartment), TWIN (townhouse/attached), "
-            "OTHER. Data: May 2021 - May 2026."
+            "OTHER. Data: May 2021 - June 2026."
         ),
         "input_schema": {
             "type": "object",
@@ -350,8 +365,45 @@ TOOLS = [
         },
     },
     {
+        "name": "get_municipality_trend",
+        "description": (
+            "Monthly resale trend for a whole municipality/city aggregate, such as Burnaby, "
+            "Vancouver, Chilliwack, or Surrey and Whiterock. Returns monthly sales, new listings, "
+            "sales-weighted average sold price, and observed year-over-year price change. Use this "
+            "instead of get_market_trend when the user asks about the city as a whole. Data: May "
+            "2021 - June 2026."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "municipality_name": {"type": "string", "description": "Municipality, e.g. Burnaby, Vancouver, Chilliwack"},
+                "property_type": {"type": "string", "description": "HOUSE (default), APTU/condo, TWIN/townhouse, or OTHER"},
+                "months": {"type": "integer", "description": "Recent months to return (3-24, default 12)"},
+            },
+            "required": ["municipality_name"],
+        },
+    },
+    {
+        "name": "recommend_municipalities",
+        "description": (
+            "Recommend Greater Vancouver municipalities before drilling into neighbourhoods. "
+            "Filter by house/condo/townhouse and budget; sort_by=price, appreciation (observed "
+            "year-over-year change, not a forecast), or liquidity (recent sales volume and DOM)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "property_type": {"type": "string", "description": "house, condo, townhouse, or other"},
+                "sort_by": {"type": "string", "description": "price (default), appreciation, or liquidity"},
+                "max_price": {"type": "number", "description": "Budget ceiling in CAD (optional)"},
+                "min_price": {"type": "number", "description": "Budget floor in CAD (optional)"},
+            },
+            "required": ["property_type"],
+        },
+    },
+    {
         "name": "list_market_areas",
-        "description": "List the 177 real-estate-board area names that have market-trend data.",
+        "description": "List the 33 real-estate-board area names that have market-trend data.",
         "input_schema": {"type": "object", "properties": {}},
     },
 ]
@@ -474,6 +526,19 @@ def _tool_recommend_neighbourhoods(property_type: str, city: Optional[str] = Non
         return {"status": "unavailable", "note": "Neighbourhood data is not loaded in this deployment."}
     return api.neighbourhood_profiles.recommend(
         city=city, property_type=property_type, sort_by=sort_by, max_price=max_price, min_price=min_price)
+
+
+def _tool_recommend_municipalities(property_type: str, sort_by: str = "price",
+                                   max_price: Optional[float] = None,
+                                   min_price: Optional[float] = None) -> dict:
+    from src.api import main as api
+
+    if api.municipality_profiles is None:
+        return {"status": "unavailable", "note": "Municipality data is not loaded."}
+    return api.municipality_profiles.recommend(
+        property_type=property_type, sort_by=sort_by,
+        max_price=max_price, min_price=min_price,
+    )
 
 
 def _tool_search(street_number: str, street_name: str, postal_code: Optional[str] = None) -> dict:
@@ -611,6 +676,32 @@ def _tool_market_trend(area_name: str, property_type: Optional[str] = None, mont
     return result
 
 
+def _tool_municipality_trend(municipality_name: str, property_type: Optional[str] = None,
+                             months: Optional[int] = None) -> dict:
+    df = get_municipality_market_df()
+    if df.empty:
+        return {"note": "Municipality trend data is not available in this deployment."}
+    months = max(3, min(int(months or 12), 24))
+    ptype_raw = str(property_type or "HOUSE").strip().upper()
+    ptype = PTYPE_ALIASES.get(ptype_raw, "HOUSE")
+    typed = df[df["property_type"].eq(ptype)]
+    needle = str(municipality_name).strip().lower()
+    compact_needle = "".join(ch for ch in needle if ch.isalnum())
+    names = sorted(typed["municipality_name"].dropna().unique())
+    matches = [name for name in names if name.lower() == needle]
+    if not matches:
+        matches = [name for name in names
+                   if compact_needle in "".join(ch for ch in name.lower() if ch.isalnum())]
+    if not matches:
+        return {"count": 0, "note": "No municipality matched that name."}
+    blocks = [
+        _trend_block(name, typed[typed["municipality_name"].eq(name)], months)
+        for name in matches[:3]
+    ]
+    return {"property_type": ptype, "count": len(matches), "trends": blocks,
+            "latest_available_month": str(typed["period_start"].max())}
+
+
 def _tool_list_market_areas() -> dict:
     df = get_market_df()
     if df.empty:
@@ -632,6 +723,8 @@ def run_tool(name: str, tool_input: dict, state: dict) -> tuple[str, bool]:
             payload = _tool_list_neighbourhoods(**tool_input)
         elif name == "recommend_neighbourhoods":
             payload = _tool_recommend_neighbourhoods(**tool_input)
+        elif name == "recommend_municipalities":
+            payload = _tool_recommend_municipalities(**tool_input)
         elif name == "search_addresses":
             payload = _tool_search(**tool_input)
         elif name == "get_area_profile":
@@ -640,6 +733,8 @@ def run_tool(name: str, tool_input: dict, state: dict) -> tuple[str, bool]:
             payload = _tool_list_areas()
         elif name == "get_market_trend":
             payload = _tool_market_trend(**tool_input)
+        elif name == "get_municipality_trend":
+            payload = _tool_municipality_trend(**tool_input)
         elif name == "list_market_areas":
             payload = _tool_list_market_areas()
         else:

@@ -64,8 +64,17 @@ coordinates are excluded (avoids train/serve skew). `src/eval/market_feature_imp
 importance from the current segmented bundle and weights detached-direct / attached-ppsf / attached-
 direct routes by their out-of-time usage; it replaces the stale pre-segmentation importance report.
 
-## Next independent capability
+## 2026-07-20 — Municipality market capability
 
-Municipality-level trend/recommendation uses `geo_level=Municipality` from the refreshed trend file
-and municipality names/centres from `region.csv`. Keep it in a separate commit/deploy from this
-Subarea refresh so the data migration can be rolled back independently.
+Implemented as a separate change from the Subarea refresh:
+
+- `build_municipality_deploy.py` filters the refreshed `geo_level=Municipality` rows through the
+  21 in-scope municipalities derived from the Area→Municipality hierarchy in `region.csv`.
+- `municipality_trend.parquet`: 4,214 monthly/type rows through 2026-06.
+- `municipality_profile.parquet`: 83 municipality×property-type recommendation rows.
+- Agent tools: `get_municipality_trend` for a whole-city aggregate and
+  `recommend_municipalities` by budget/price, observed year-over-year appreciation, or liquidity.
+- Thin markets are excluded when at least three reliable alternatives (24+ sales/year) exist.
+  Appreciation is explicitly historical, not a forecast.
+
+The next product branches remain investment rental-yield data and vacation/resort coverage.

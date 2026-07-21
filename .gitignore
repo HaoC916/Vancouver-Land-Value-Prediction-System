@@ -67,6 +67,8 @@ frontend/.vite/
 !data/deploy/subarea_amenities.parquet
 !data/deploy/subarea_transit.parquet
 !data/deploy/subarea_safety.parquet
+!data/deploy/municipality_trend.parquet
+!data/deploy/municipality_profile.parquet
 
 # Local source manifest — maps logical names to licensed, private data files.
 # NEVER commit (keeps real source filenames/paths out of the repo).

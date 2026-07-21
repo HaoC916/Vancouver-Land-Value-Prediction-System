@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from src.infer.predict import LandValuePredictor
 from src.infer.market_predict import MarketPricePredictor
+from src.infer.municipalities import MunicipalityProfiles
 from src.infer.neighbourhoods import NeighbourhoodProfiles
 
 # ------------------------------------------------------------
@@ -60,6 +61,14 @@ try:
         neighbourhood_profiles = None
 except Exception:
     neighbourhood_profiles = None
+
+# Municipality-level market profiles (budget / observed appreciation / liquidity).
+try:
+    municipality_profiles: MunicipalityProfiles | None = MunicipalityProfiles()
+    if municipality_profiles.df is None:
+        municipality_profiles = None
+except Exception:
+    municipality_profiles = None
 
 # ------------------------------------------------------------
 # 4. Address lookup source
