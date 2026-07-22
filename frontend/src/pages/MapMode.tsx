@@ -105,6 +105,7 @@ export default function MapMode({ onAsk }: MapModeProps) {
   const mapNodeRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.GeoJSON | null>(null);
+  const selectedElementRef = useRef<Element | null>(null);
   const [level, setLevel] = useState<Level>("municipalities");
   const [propertyType, setPropertyType] = useState<PropertyType>("APTU");
   const [metric, setMetric] = useState<Metric>("price");
@@ -185,12 +186,34 @@ export default function MapMode({ onAsk }: MapModeProps) {
       onEachFeature: (feature, featureLayer) => {
         const typed = feature as Feature<Geometry, MapProperties>;
         const value = metricValue(typed.properties, propertyType, metric);
+        const selectFeature = () => {
+          selectedElementRef.current?.classList.remove("map-area-selected");
+          const element = featureLayer instanceof L.Path ? featureLayer.getElement() ?? null : null;
+          element?.classList.add("map-area-selected");
+          selectedElementRef.current = element;
+          setSelected(typed);
+          if (featureLayer instanceof L.Path) featureLayer.bringToFront();
+        };
         featureLayer.bindTooltip(
           `<strong>${typed.properties.name}</strong><br>${metricLabel(value, metric)}`,
           { sticky: true, className: "map-tooltip" },
         );
+        featureLayer.on("add", () => {
+          if (!(featureLayer instanceof L.Path)) return;
+          const element = featureLayer.getElement();
+          if (!element) return;
+          element.setAttribute("data-map-name", typed.properties.name);
+          element.setAttribute("role", "button");
+          element.setAttribute("tabindex", "0");
+          element.setAttribute("aria-label", `Select ${typed.properties.name}`);
+          element.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            selectFeature();
+          });
+        });
         featureLayer.on({
-          click: () => setSelected(typed),
+          click: selectFeature,
           mouseover: () => {
             if (featureLayer instanceof L.Path) {
               featureLayer.setStyle({ weight: 2.5, color: "#334155", fillOpacity: 0.9 });
@@ -204,6 +227,8 @@ export default function MapMode({ onAsk }: MapModeProps) {
     const bounds = layer.getBounds();
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [18, 18], maxZoom: cityFilter ? 12 : 10 });
     return () => {
+      selectedElementRef.current?.classList.remove("map-area-selected");
+      selectedElementRef.current = null;
       layer.remove();
       if (layerRef.current === layer) layerRef.current = null;
     };

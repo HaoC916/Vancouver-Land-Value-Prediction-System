@@ -4,6 +4,13 @@ This is the short, code-adjacent handoff. Historical design decisions remain in 
 handoff; this file records the current data revision, reproducible build entry points, validation
 results, and known limitations.
 
+## 2026-07-21 — Map selection outline and Statistics Canada boundary review
+
+- Replaced the browser's rectangular SVG focus outline with an accessible focus/selection stroke that follows the actual city or community polygon.
+- Reviewed `data/processed/updated/july21/census_boundary.csv`: 2021 CSD/DA boundaries for BC and Ontario, encoded as EWKB in EPSG:4326.
+- Confirmed the file is useful as an authoritative administrative-boundary QA/reference source, but should not automatically replace the refined MLS market boundaries.
+- Full findings: `docs/census-boundary-assessment-2026-07-21.md`.
+
 ## 2026-07-20 — July community-data refresh
 
 ### Canonical local inputs
