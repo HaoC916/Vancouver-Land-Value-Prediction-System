@@ -207,6 +207,7 @@ export default function MapMode({ onAsk }: MapModeProps) {
           element.setAttribute("tabindex", "0");
           element.setAttribute("aria-label", `Select ${typed.properties.name}`);
           element.addEventListener("keydown", (event) => {
+            if (!(event instanceof KeyboardEvent)) return;
             if (event.key !== "Enter" && event.key !== " ") return;
             event.preventDefault();
             selectFeature();
